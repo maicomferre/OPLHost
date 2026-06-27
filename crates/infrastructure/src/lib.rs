@@ -8,6 +8,7 @@
 
 pub mod dialog;
 pub mod firewall;
+pub mod iso;
 pub mod meta_store;
 pub mod net;
 pub mod privilege;
