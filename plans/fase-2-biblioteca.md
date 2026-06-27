@@ -8,7 +8,7 @@
 - **Status:** Em andamento
 - **Criado em:** 2026-06-27
 - **Última atualização:** 2026-06-27 (Game ID + parser ISO9660 no `core`; leitor
-  de ISO na `infra`)
+  de ISO na `infra`; endpoints de art e `ureq` 3.3.0 confirmados por pesquisa)
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
@@ -35,19 +35,32 @@ share.
 | 2026-06-27 | Game ID lido do `SYSTEM.CNF` (`BOOT2`) de dentro da ISO | Robusto e fiel ao PyOPLM; independe de o usuário ter renomeado a ISO | Extrair do nome do arquivo (quebra fora da convenção); ambos com fallback |
 | 2026-06-27 | Art **baixado sob demanda** por Game ID das fontes externas (Kira/danielb) | Entrega o valor central (capa automática) sem o usuário caçar art | Apontar pasta local de art; híbrido local+download |
 | 2026-06-27 | Parse ISO9660 (PVD, registros de diretório) como funções PURAS no `core`; só o seek/read fica na `infra` | Mantém a regra de inversão: parsers testáveis sem disco; `infra` só alimenta bytes | Reader monolítico na `infra` (parsers não testáveis isoladamente) |
+| 2026-06-27 | HTTP via `ureq` 3.3.0 (bloqueante, rustls) | Sem runtime async; casa com a worker thread; TLS estático simplifica o `.deb` | `reqwest` (async, arrasta tokio); `curl` via shell (dep externa) |
+| 2026-06-27 | Fonte de art = DB OPLM (danielb) no archive.org, baixando arquivo de dentro do zip por Game ID; **base URL configurável** com default no item atual | É a única fonte com extração por arquivo (Kira é `.7z` não extraível); configurável driblando o 503/mirrors | Baixar o zip/7z inteiro (6 GB, inviável por jogo); só pasta local (perde o auto-download) |
 
 ## A validar no ambiente
-- [ ] Crate HTTP leve e **bloqueante** (casa com a worker thread já usada): avaliar
-      `ureq` (TLS via rustls, sem runtime async) vs `reqwest`. Confirmar presença
-      no cache/registry e impacto no `.deb` (deps de TLS).
-- [ ] Endpoints e formato de nome dos arquivos de art nas fontes (set do Kira;
-      backups do OPL Manager / danielb no archive.org). Confirmar antes de fixar URLs.
-- [ ] Convenção exata dos nomes de ART do OPL (sufixos: `_COV`, `_COV2L`, `_ICO`,
-      `_LAB`, `_BG`, etc.) — confirmar com PyOPLM/OPL.
-- [ ] Leitor ISO9660: escrever um mínimo (só PVD + diretório raiz + `SYSTEM.CNF`)
-      vs usar crate. Validar a extração com pelo menos uma ISO real de PS2.
+- [x] **Crate HTTP:** `ureq` **3.3.0** (mar/2026) — síncrono/bloqueante, TLS via
+      `rustls` por padrão, **sem runtime async**. Casa com a worker thread já
+      usada na UI. (Confirmar download para o cache offline ao adicionar a dep.)
+- [x] **Fonte e endpoints (confirmados via PyOPLM `storage.py` + archive.org):**
+      DB mensal do OPL Manager (danielb). Item canônico atual: `OPLM_ART_2023_11`
+      (zip 6.3 GB, 96.155 arquivos). Estrutura interna:
+      `PS2/<GameID>/<GameID>_<TIPO>.<ext>` (ex.: `PS2/SCUS_973.13/SCUS_973.13_COV.jpg`).
+      URL por arquivo: `https://archive.org/download/<ITEM>/<ITEM>.zip/PS2/<id>/<id>_COV.jpg`
+      (tentar `.jpg` e `.png`). O set do Kira é um `.7z` único (não extraível por
+      arquivo no archive.org) → fica como fonte secundária/offline.
+- [x] **Sufixos de ART do OPL (do PyOPLM):** `COV` (capa frente), `COV2` (verso),
+      `ICO`, `LAB` (rótulo do disco), `LGO` (logo), `SCR`/`SCR2` (screenshots),
+      `BG` (fundo). BG/SCR têm variantes numeradas `_NN` na fonte. Destino em
+      `ART/`: `<GameID>_<TIPO>.<ext>`. V1 prioriza `COV`.
+- [~] Leitor ISO9660: escrito mínimo (PVD + raiz + `SYSTEM.CNF`) e testado com ISO
+      sintética. **Pendente:** validar com uma ISO real de PS2.
 - [ ] Mecanismo de auth do Samba para o share (criar usuário via `smbpasswd -a`,
       `guest ok = no`, `valid users`) — confirmar com `testparm` no ambiente.
+- [!] **Risco confirmado:** a extração de arquivo de dentro do zip no archive.org
+      retorna **503 intermitente** (serviço pesado/rate-limited). A *listagem* do
+      zip funciona. → `ArtProvider` com retry/backoff, falha graciosa e **base URL
+      configurável** (mirror ou backup local descompactado servido por estático).
 
 ## Tarefas
 - [x] `core`: tipo `GameId` (normalização/validação do formato `LLLL_NNN.NN`) e
@@ -89,3 +102,4 @@ share.
 |------|---------|--------|
 | 2026-06-27 | Plano da fase aberto; decisões de Game ID (SYSTEM.CNF) e art (download por ID) registradas | _(pendente)_ |
 | 2026-06-27 | `core`: `GameId` + `parse_boot2_game_id` + parser ISO9660 puro; `infra`: `iso::read_game_id`. core 23 / infra 21 testes verdes | _(pendente)_ |
+| 2026-06-27 | Pesquisa de endpoints: fonte OPLM (archive.org), estrutura `PS2/<id>/<id>_COV.jpg`, sufixos do OPL; `ureq` 3.3.0 confirmado; risco 503 registrado | _(pendente)_ |
