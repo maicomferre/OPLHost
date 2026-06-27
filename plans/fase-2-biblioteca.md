@@ -53,8 +53,9 @@ share.
       `ICO`, `LAB` (rótulo do disco), `LGO` (logo), `SCR`/`SCR2` (screenshots),
       `BG` (fundo). BG/SCR têm variantes numeradas `_NN` na fonte. Destino em
       `ART/`: `<GameID>_<TIPO>.<ext>`. V1 prioriza `COV`.
-- [~] Leitor ISO9660: escrito mínimo (PVD + raiz + `SYSTEM.CNF`) e testado com ISO
-      sintética. **Pendente:** validar com uma ISO real de PS2.
+- [x] Leitor ISO9660: escrito mínimo (PVD + raiz + `SYSTEM.CNF`) e testado com ISO
+      sintética. **Validado com ISOs reais** (backup `OPL_BACKUP` do usuário): Game
+      ID extraído e catálogo rico exibido corretamente na UI.
 - [ ] Mecanismo de auth do Samba para o share (criar usuário via `smbpasswd -a`,
       `guest ok = no`, `valid users`) — confirmar com `testparm` no ambiente.
 - [!] **Risco confirmado:** a extração de arquivo de dentro do zip no archive.org
@@ -88,8 +89,10 @@ share.
 - [ ] Manter cobertura do `core` (parsers novos cobertos por teste).
 
 ## Critérios de aceitação
-- [ ] Game ID extraído corretamente de ao menos uma ISO real de PS2.
-- [ ] Catálogo rico exibido na UI (título/ID/mídia/tamanho/contagem).
+- [x] Game ID extraído corretamente de ao menos uma ISO real de PS2 (validado com
+      o backup `OPL_BACKUP` do usuário em 2026-06-27).
+- [x] Catálogo rico exibido na UI (título/ID/mídia/tamanho/contagem) — validado em
+      execução real com `OPL_BACKUP`.
 - [ ] Capa baixada por Game ID e gravada em `ART/` com a nomenclatura do OPL;
       OPL reconhece.
 - [ ] Autenticação opcional funciona (conexão com usuário/senha além do guest).
@@ -114,3 +117,4 @@ share.
 | 2026-06-27 | `infra`: `ArtProvider` (Trait `HttpGet` + mock, `UreqClient` real com retry/backoff 502-504, base URL configurável). infra 27 testes verdes | _(pendente)_ |
 | 2026-06-27 | `core`: `GameMeta` ganha `game_id`/`title`; `derive_title`; cache v2 com `serde(default)` (compat v1). core 29 testes verdes | _(pendente)_ |
 | 2026-06-27 | UI: catálogo rico (`ListView` título/ID/mídia/tamanho + resumo) e botão "Baixar capas"; `scan_games_with_paths` + `OplMeta::from_games`. infra 28 testes verdes | _(pendente)_ |
+| 2026-06-27 | Validação real: leitor ISO9660 + extração de Game ID + catálogo rico confirmados com o backup `OPL_BACKUP` do usuário (2 critérios de aceitação fechados) | _(pendente)_ |
