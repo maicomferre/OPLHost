@@ -19,6 +19,7 @@ export component AppWindow inherits Window {
 
     callback start-clicked();
     callback stop-clicked();
+    callback choose-dir-clicked();
 
     VerticalBox {
         padding: 16px;
@@ -33,10 +34,18 @@ export component AppWindow inherits Window {
         GroupBox {
             title: "Diretório-alvo do OPL";
             VerticalBox {
-                LineEdit {
-                    placeholder-text: "/caminho/para/o/disco-ou-pasta";
-                    text <=> root.dir-path;
-                    enabled: !root.busy;
+                HorizontalBox {
+                    spacing: 8px;
+                    LineEdit {
+                        placeholder-text: "/caminho/para/o/disco-ou-pasta";
+                        text <=> root.dir-path;
+                        enabled: !root.busy;
+                    }
+                    Button {
+                        text: "Escolher pasta…";
+                        enabled: !root.busy;
+                        clicked => { root.choose-dir-clicked(); }
+                    }
                 }
                 Text {
                     text: "A estrutura de pastas do OPL (CD, DVD, ART, …) é criada aqui.";

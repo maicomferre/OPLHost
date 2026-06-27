@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use oplhost_core::{
     create_opl_layout, summarize, MetaStore, OplMeta, ServerStatus, ShareConfig, StorageBackend,
 };
-use oplhost_infra::{net, scan, JsonMetaStore, RealFs, SmbBackend};
+use oplhost_infra::{dialog, net, scan, JsonMetaStore, RealFs, SmbBackend};
 
 slint::include_modules!();
 
@@ -29,6 +29,8 @@ const SMB_PORT: u16 = 445;
 struct UiUpdate {
     status: Option<String>,
     catalog: Option<String>,
+    /// Novo caminho do diretório-alvo (preenchido pelo seletor de pasta).
+    dir: Option<String>,
     message: String,
 }
 
@@ -48,6 +50,9 @@ impl UiUpdate {
         }
         if let Some(c) = self.catalog {
             ui.set_catalog_text(c.into());
+        }
+        if let Some(d) = self.dir {
+            ui.set_dir_path(d.into());
         }
         ui.set_message_text(self.message.into());
         ui.set_busy(false);
@@ -71,6 +76,13 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.on_stop_clicked(move || {
         if let Some(ui) = weak.upgrade() {
             handle_stop(&ui);
+        }
+    });
+
+    let weak = ui.as_weak();
+    ui.on_choose_dir_clicked(move || {
+        if let Some(ui) = weak.upgrade() {
+            handle_choose_dir(&ui);
         }
     });
 
@@ -115,6 +127,28 @@ fn handle_stop(ui: &AppWindow) {
     });
 }
 
+/// "Escolher pasta…": abre o seletor nativo (zenity/kdialog) numa worker thread
+/// para não travar o event loop, partindo do caminho já digitado. A seleção
+/// preenche o campo de diretório; cancelar não altera nada.
+fn handle_choose_dir(ui: &AppWindow) {
+    let current = ui.get_dir_path().to_string();
+    let start = match current.trim() {
+        "" => None,
+        s => Some(PathBuf::from(s)),
+    };
+    spawn_job(ui, "Selecionando pasta…", move || run_choose_dir(start));
+}
+
+fn run_choose_dir(start: Option<PathBuf>) -> UiUpdate {
+    match dialog::pick_folder(start) {
+        Some(path) => UiUpdate {
+            dir: Some(path.display().to_string()),
+            ..Default::default()
+        },
+        None => UiUpdate::default(),
+    }
+}
+
 /// Marca `busy`, exibe a mensagem de progresso e roda `job` numa worker thread,
 /// devolvendo o `UiUpdate` para o event loop quando terminar. Centraliza o padrão
 /// de threading para que `handle_start`/`handle_stop` fiquem declarativos.
@@ -150,7 +184,7 @@ fn run_start(target: &Path) -> UiUpdate {
         Ok(()) => UiUpdate {
             status: Some(probe_status_text()),
             catalog: Some(build_catalog_text(target)),
-            message: String::new(),
+            ..Default::default()
         },
         Err(e) => UiUpdate::message(format!("Não foi possível iniciar: {e}")),
     }

@@ -28,7 +28,7 @@ slint-build = "1"
 [package.metadata.deb]
 section = "utils"
 priority = "optional"
-depends = "samba, policykit-1, libfontconfig1"
+depends = "samba, policykit-1, libfontconfig1, zenity | kdialog"
 maintainer-scripts = "packaging/"
 assets = [
     ["target/release/oplhost", "usr/bin/", "755"],

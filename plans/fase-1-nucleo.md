@@ -7,8 +7,8 @@
 - **Status:** Em andamento
 - **Criado em:** 2026-06-26
 - **Última atualização:** 2026-06-27 (spike portado para `SmbBackend`; adapters,
-  catálogo/meta e fiação da UI feitos; chamadas ao `pkexec` movidas para worker
-  thread)
+  catálogo/meta e fiação da UI feitos; `pkexec` em worker thread; seletor nativo
+  de pasta via `zenity`/`kdialog`)
 
 ## Contexto e objetivo
 Transformar o aprendizado do spike numa arquitetura Clean (Ports & Adapters)
@@ -77,9 +77,11 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 - [x] Empacotamento `.deb`: metadata `cargo-deb`, `.desktop` e `postinst`
       validando `samba`/`polkit`. **Gerar de fato com `cargo deb` ainda pendente
       (ferramenta não instalada no ambiente).**
-- [ ] Substituir o campo de texto do diretório por um seletor nativo de pasta
-      (avaliar `rfd` xdg-portal vs. diálogo do Slint) — evitado agora para não
-      arriscar build-deps de GTK.
+- [x] Seletor nativo de pasta: botão "Escolher pasta…" → adapter `dialog` que
+      dispara `zenity` (fallback `kdialog`) numa worker thread, sem build-deps de
+      GTK. Descartado o `rfd` (não está no cache offline; arrasta `ashpd`/runtime
+      async). `zenity | kdialog` adicionado ao `Depends` do `.deb`. O campo de
+      texto continua editável como alternativa.
 - [ ] Rodar `apply`/`rollback` reais ponta a ponta com Polkit (teste manual com
       senha) e gerar/instalar o `.deb`.
 
@@ -103,3 +105,4 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 | 2026-06-26 | Scaffold que compila e roda: workspace 3 crates, core testado, infra com stubs, janela Slint | _(pendente)_ |
 | 2026-06-27 | Spike portado para `SmbBackend` (escalador Polkit, firewall, scripts puros testados); `core` ganha `catalog`+`meta`; `JsonMetaStore`/`scan`/`net`; UI fiada ao backend; metadata `.deb`. 28 testes verdes, clippy limpo | _(pendente)_ |
 | 2026-06-27 | `pkexec` (apply/rollback) movido para worker thread; UI não trava no prompt do Polkit (`upgrade_in_event_loop` + flag `busy`) | _(pendente)_ |
+| 2026-06-27 | Seletor nativo de pasta via `zenity`/`kdialog` (adapter `dialog`), na worker thread; `Depends` do `.deb` atualizado. 31 testes verdes | _(pendente)_ |

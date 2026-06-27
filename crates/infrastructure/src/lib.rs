@@ -6,6 +6,7 @@
 //! `FirewallManager` abre/fecha a porta. Tudo depende do `core`; o `core`
 //! nunca depende daqui.
 
+pub mod dialog;
 pub mod firewall;
 pub mod meta_store;
 pub mod net;
