@@ -1,16 +1,21 @@
-import { Button, VerticalBox, HorizontalBox, GroupBox } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit } from "std-widgets.slint";
 
-// Janela mínima do scaffold da Fase 1: status do servidor, IP/instruções de
-// conexão e start/stop. A lógica de negócio vive no core; aqui só apresentação
-// e callbacks. O aviso de SMBv1 cumpre o requisito de transparência (§0/§8).
+// Janela funcional da Fase 1: seleção do diretório-alvo, status do servidor,
+// IP/instruções de conexão, catálogo e start/stop. A lógica de negócio vive no
+// core/infra; aqui só apresentação e callbacks (a UI nunca fala com a infra
+// direto — o binário é a raiz de composição). O aviso de SMBv1 cumpre o
+// requisito de transparência (§0/§8).
 export component AppWindow inherits Window {
     title: "oplhost — servidor OPL";
-    preferred-width: 520px;
-    preferred-height: 360px;
+    preferred-width: 560px;
+    preferred-height: 460px;
 
     in property <string> status-text: "Parado";
     in property <string> ip-text: "—";
-    in property <string> share-path: "(nenhum diretório selecionado)";
+    in property <string> catalog-text: "Nenhum diretório carregado.";
+    in property <string> message-text: "";
+    in-out property <string> dir-path: "";
+    in property <bool> busy: false;
 
     callback start-clicked();
     callback stop-clicked();
@@ -27,17 +32,48 @@ export component AppWindow inherits Window {
         }
 
         GroupBox {
+            title: "Diretório-alvo do OPL";
+            VerticalBox {
+                HorizontalBox {
+                    spacing: 8px;
+                    LineEdit {
+                        placeholder-text: "/caminho/para/o/disco-ou-pasta";
+                        text <=> root.dir-path;
+                        enabled: !root.busy;
+                    }
+                    Button {
+                        text: "Escolher pasta…";
+                        enabled: !root.busy;
+                        clicked => { root.choose-dir-clicked(); }
+                    }
+                }
+                Text {
+                    text: "A estrutura de pastas do OPL (CD, DVD, ART, …) é criada aqui.";
+                    font-size: 12px;
+                    color: #888;
+                }
+            }
+        }
+
+        GroupBox {
             title: "Servidor";
             VerticalBox {
                 Text { text: "Status: " + root.status-text; }
-                Text { text: "IP local: " + root.ip-text; }
-                Text { text: "Diretório OPL: " + root.share-path; }
+                Text { text: "IP local (digite no OPL): " + root.ip-text; }
+                Text { text: root.catalog-text; }
             }
+        }
+
+        if root.message-text != "": Text {
+            text: root.message-text;
+            wrap: word-wrap;
+            color: #d33682;
         }
 
         Text {
             text: "Atenção: o OPL exige SMBv1 (protocolo legado). O app reabilita "
-                + "esse protocolo num share isolado e abre a porta 445.";
+                + "esse protocolo num share isolado e abre a porta 445 — pedindo "
+                + "sua senha uma única vez.";
             wrap: word-wrap;
             color: #b58900;
         }
@@ -45,16 +81,14 @@ export component AppWindow inherits Window {
         HorizontalBox {
             spacing: 8px;
             Button {
-                text: "Escolher diretório…";
-                clicked => { root.choose-dir-clicked(); }
-            }
-            Button {
-                text: "Iniciar";
+                text: "Iniciar servidor";
                 primary: true;
+                enabled: !root.busy;
                 clicked => { root.start-clicked(); }
             }
             Button {
-                text: "Parar";
+                text: "Parar e reverter";
+                enabled: !root.busy;
                 clicked => { root.stop-clicked(); }
             }
         }

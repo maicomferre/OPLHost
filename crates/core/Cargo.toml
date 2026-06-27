@@ -5,4 +5,10 @@ edition = "2024"
 
 # core é puro: regras de negócio, tipos de domínio e Traits (ports).
 # Sem dependências de I/O, rede ou UI — é o que o torna testável isoladamente.
+# serde só fornece os derives de (de)serialização do opl_meta.json; não é I/O.
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+
+# serde_json é usado apenas nos testes do core (roundtrip do opl_meta.json).
+[dev-dependencies]
+serde_json = "1"
