@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use oplhost_core::{
-    create_opl_layout, summarize, GameMeta, MediaKind, MetaStore, OplMeta, ServerStatus,
+    create_opl_layout, summarize, GameMeta, MediaKind, MetaStore, OplMeta, ServerStatus, ShareAuth,
     ShareConfig, StorageBackend,
 };
 use oplhost_infra::{dialog, iso, net, scan, ArtProvider, JsonMetaStore, RealFs, SmbBackend};
@@ -91,6 +91,8 @@ fn main() -> Result<(), slint::PlatformError> {
 
     ui.set_ip_text(net::local_ip().unwrap_or_else(|| "indisponível (offline?)".into()).into());
     ui.set_status_text(probe_status_text().into());
+    // Usuário do share autenticado = dono da pasta (conta já existente no sistema).
+    ui.set_auth_username(current_user().into());
 
     let weak = ui.as_weak();
     ui.on_start_clicked(move || {
@@ -128,12 +130,25 @@ fn current_user() -> String {
     std::env::var("USER").unwrap_or_else(|_| "nobody".to_string())
 }
 
-fn share_config(target: &Path) -> ShareConfig {
+fn share_config(target: &Path, auth: ShareAuth) -> ShareConfig {
     ShareConfig {
         target_dir: target.to_path_buf(),
         share_name: SHARE_NAME.to_string(),
         port: SMB_PORT,
         owner_user: current_user(),
+        auth,
+    }
+}
+
+/// Modo de acesso a partir do estado da UI: autenticado (usuário = dono da
+/// pasta) quando o toggle está ligado, senão guest (padrão).
+fn auth_mode(enabled: bool) -> ShareAuth {
+    if enabled {
+        ShareAuth::User {
+            username: current_user(),
+        }
+    } else {
+        ShareAuth::Guest
     }
 }
 
@@ -146,8 +161,17 @@ fn handle_start(ui: &AppWindow) {
         return;
     }
 
+    let auth_enabled = ui.get_auth_enabled();
+    let password = ui.get_auth_password().to_string();
+    if auth_enabled && password.trim().is_empty() {
+        ui.set_message_text(
+            "Defina uma senha para o acesso autenticado (ou desmarque a opção).".into(),
+        );
+        return;
+    }
+
     spawn_job(ui, "Aplicando configuração (informe sua senha no prompt)…", move || {
-        run_start(&target)
+        run_start(&target, auth_enabled, password)
     });
 }
 
@@ -155,9 +179,10 @@ fn handle_start(ui: &AppWindow) {
 /// única janela Polkit, fora da thread da UI. Volta o sistema ao estado anterior (§0).
 fn handle_stop(ui: &AppWindow) {
     let target = PathBuf::from(ui.get_dir_path().to_string());
+    let auth_enabled = ui.get_auth_enabled();
 
     spawn_job(ui, "Revertendo configuração (informe sua senha no prompt)…", move || {
-        run_stop(&target)
+        run_stop(&target, auth_enabled)
     });
 }
 
@@ -255,7 +280,7 @@ where
 /// Trabalho de "Iniciar" (worker thread): cria a estrutura do OPL e aplica o
 /// share SMBv1. `create_opl_layout` é user-space; `apply_config` abre a janela
 /// Polkit. Retorna o que a UI deve mostrar.
-fn run_start(target: &Path) -> UiUpdate {
+fn run_start(target: &Path, auth_enabled: bool, password: String) -> UiUpdate {
     if let Err(e) = create_opl_layout(&RealFs, target) {
         return UiUpdate::message(format!(
             "Falha ao criar a estrutura em {}: {e}",
@@ -263,8 +288,9 @@ fn run_start(target: &Path) -> UiUpdate {
         ));
     }
 
-    let cfg = share_config(target);
-    let backend = SmbBackend::new(cfg.clone());
+    let cfg = share_config(target, auth_mode(auth_enabled));
+    let pw = if auth_enabled { Some(password) } else { None };
+    let backend = SmbBackend::new(cfg.clone()).with_auth_password(pw);
     match backend.apply_config(&cfg) {
         Ok(()) => {
             let (rows, summary) = build_catalog(target);
@@ -280,8 +306,8 @@ fn run_start(target: &Path) -> UiUpdate {
 }
 
 /// Trabalho de "Parar" (worker thread): rollback completo via Polkit.
-fn run_stop(target: &Path) -> UiUpdate {
-    let backend = SmbBackend::new(share_config(target));
+fn run_stop(target: &Path, auth_enabled: bool) -> UiUpdate {
+    let backend = SmbBackend::new(share_config(target, auth_mode(auth_enabled)));
     match backend.rollback() {
         Ok(()) => UiUpdate {
             status: Some(probe_status_text()),
@@ -294,7 +320,7 @@ fn run_stop(target: &Path) -> UiUpdate {
 
 /// Estado real do `smbd` como texto para a UI. Sem root (`systemctl is-active`).
 fn probe_status_text() -> String {
-    let backend = SmbBackend::new(share_config(Path::new("/")));
+    let backend = SmbBackend::new(share_config(Path::new("/"), ShareAuth::Guest));
     match backend.status() {
         Ok(ServerStatus::Running) => "Rodando",
         Ok(ServerStatus::Stopped) => "Parado",

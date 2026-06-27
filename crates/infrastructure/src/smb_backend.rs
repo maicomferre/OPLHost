@@ -15,13 +15,31 @@ use crate::privilege::{PkexecEscalator, PrivilegeEscalator};
 use crate::smb_script::{build_apply_script, build_rollback_script, SmbPaths};
 
 /// Backend Samba, genérico sobre o escalador de privilégio (injetável nos testes).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SmbBackend<E: PrivilegeEscalator = PkexecEscalator> {
     paths: SmbPaths,
     escalator: E,
     /// Config a aplicar/reverter. Necessária para `rollback` fechar a mesma
     /// porta que `apply_config` abriu.
     cfg: ShareConfig,
+    /// Senha do usuário Samba para o modo autenticado. **Transitória:** usada só
+    /// ao montar o script de apply (`smbpasswd`). `None` no modo guest. Nunca é
+    /// serializada nem impressa — ver o `impl Debug` abaixo, que a redige.
+    auth_password: Option<String>,
+}
+
+/// `Debug` manual: jamais expõe a senha em logs/panics. Tudo o mais é mostrado.
+impl<E: PrivilegeEscalator> std::fmt::Debug for SmbBackend<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SmbBackend")
+            .field("paths", &self.paths)
+            .field("cfg", &self.cfg)
+            .field(
+                "auth_password",
+                &self.auth_password.as_ref().map(|_| "<redigida>"),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl SmbBackend<PkexecEscalator> {
@@ -31,6 +49,7 @@ impl SmbBackend<PkexecEscalator> {
             paths: SmbPaths::default(),
             escalator: PkexecEscalator,
             cfg,
+            auth_password: None,
         }
     }
 }
@@ -42,7 +61,15 @@ impl<E: PrivilegeEscalator> SmbBackend<E> {
             paths,
             escalator,
             cfg,
+            auth_password: None,
         }
+    }
+
+    /// Define a senha do usuário Samba para o modo autenticado, consumida só no
+    /// `apply_config`. No modo guest passe `None` (ou simplesmente não chame).
+    pub fn with_auth_password(mut self, password: Option<String>) -> Self {
+        self.auth_password = password;
+        self
     }
 
     /// Consulta `systemctl is-active smbd` (leitura, não precisa de root).
@@ -61,7 +88,7 @@ impl<E: PrivilegeEscalator> StorageBackend for SmbBackend<E> {
         if !self.smbd_active() && net::tcp_port_listening(cfg.port) {
             return Err(BackendError::PortInUse(cfg.port));
         }
-        let script = build_apply_script(&self.paths, cfg);
+        let script = build_apply_script(&self.paths, cfg, self.auth_password.as_deref());
         self.escalator.run_root_script(&script)
     }
 
@@ -90,6 +117,7 @@ impl<E: PrivilegeEscalator> StorageBackend for SmbBackend<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oplhost_core::ShareAuth;
     use std::cell::RefCell;
     use std::path::PathBuf;
 
@@ -112,6 +140,7 @@ mod tests {
             share_name: "PS2SMB".to_string(),
             port: 445,
             owner_user: "maicom".to_string(),
+            auth: ShareAuth::Guest,
         }
     }
 
@@ -128,6 +157,38 @@ mod tests {
         assert!(s.contains("opl_share.conf"));
         assert!(s.contains("systemctl restart smbd"));
         assert!(s.contains("ufw allow 445/tcp"));
+    }
+
+    #[test]
+    fn apply_autenticado_repassa_a_senha_ao_script_numa_unica_janela() {
+        let auth = ShareConfig {
+            auth: ShareAuth::User {
+                username: "maicom".to_string(),
+            },
+            ..cfg()
+        };
+        let esc = RecordingEscalator::default();
+        let backend = SmbBackend::with_parts(auth.clone(), SmbPaths::default(), esc)
+            .with_auth_password(Some("s3nha".to_string()));
+
+        backend.apply_config(&auth).unwrap();
+
+        let scripts = backend.escalator.scripts.borrow();
+        assert_eq!(scripts.len(), 1, "auth + share + firewall numa única janela");
+        let s = &scripts[0];
+        assert!(s.contains("smbpasswd -s -a 'maicom'"));
+        assert!(s.contains("'s3nha'"));
+        assert!(s.contains("valid users = maicom"));
+    }
+
+    #[test]
+    fn debug_nao_vaza_a_senha() {
+        let esc = RecordingEscalator::default();
+        let backend = SmbBackend::with_parts(cfg(), SmbPaths::default(), esc)
+            .with_auth_password(Some("supersecreta".to_string()));
+        let dump = format!("{backend:?}");
+        assert!(!dump.contains("supersecreta"));
+        assert!(dump.contains("<redigida>"));
     }
 
     #[test]

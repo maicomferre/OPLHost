@@ -7,8 +7,9 @@
 
 - **Status:** Em andamento
 - **Criado em:** 2026-06-27
-- **Última atualização:** 2026-06-27 (UI: catálogo rico em `ListView` com
-  título/ID/mídia/tamanho + botão "Baixar capas" na worker thread)
+- **Última atualização:** 2026-06-27 (autenticação opcional usuário/senha:
+  `ShareAuth` no `core`, `valid users`/`smbpasswd` no backend SMB e toggle na UI;
+  conf autenticado validado com `testparm` no ambiente)
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
@@ -37,6 +38,8 @@ share.
 | 2026-06-27 | Parse ISO9660 (PVD, registros de diretório) como funções PURAS no `core`; só o seek/read fica na `infra` | Mantém a regra de inversão: parsers testáveis sem disco; `infra` só alimenta bytes | Reader monolítico na `infra` (parsers não testáveis isoladamente) |
 | 2026-06-27 | HTTP via `ureq` 3.3.0 (bloqueante, rustls) | Sem runtime async; casa com a worker thread; TLS estático simplifica o `.deb` | `reqwest` (async, arrasta tokio); `curl` via shell (dep externa) |
 | 2026-06-27 | Fonte de art = DB OPLM (danielb) no archive.org, baixando arquivo de dentro do zip por Game ID; **base URL configurável** com default no item atual | É a única fonte com extração por arquivo (Kira é `.7z` não extraível); configurável driblando o 503/mirrors | Baixar o zip/7z inteiro (6 GB, inviável por jogo); só pasta local (perde o auto-download) |
+| 2026-06-27 | Auth opcional via `valid users = <user>` + `guest ok = no`; usuário = **dono da pasta** (conta já existente), senha definida por `smbpasswd -s -a` (stdin, nunca argv); guest segue padrão | Não criar contas de sistema (sem `useradd`: menor footprint e risco); reaproveita a conta que já é `force user` | Criar usuário Samba dedicado (exige `useradd`, gestão de conta); senha em argv (vazaria no `ps`) |
+| 2026-06-27 | Senha transitória: fora do `ShareConfig` (que é `Eq`/`Debug`), só em `SmbBackend.auth_password` com `Debug` redigido | Evita vazar a senha em logs/serialização/comparações | Pôr a senha no `ShareConfig` (vazaria em `Debug`/logs) |
 
 ## A validar no ambiente
 - [x] **Crate HTTP:** `ureq` **3.3.0** (mar/2026) — síncrono/bloqueante, TLS via
@@ -56,8 +59,10 @@ share.
 - [x] Leitor ISO9660: escrito mínimo (PVD + raiz + `SYSTEM.CNF`) e testado com ISO
       sintética. **Validado com ISOs reais** (backup `OPL_BACKUP` do usuário): Game
       ID extraído e catálogo rico exibido corretamente na UI.
-- [ ] Mecanismo de auth do Samba para o share (criar usuário via `smbpasswd -a`,
-      `guest ok = no`, `valid users`) — confirmar com `testparm` no ambiente.
+- [x] Mecanismo de auth do Samba para o share (`smbpasswd -a`, `guest ok = no`,
+      `valid users`) — **conf autenticado validado com `testparm`** (Samba 4.23.x,
+      "Loaded services file OK"; só os avisos esperados de NT1/lanman, §0). Falta
+      a confirmação de conexão fim-a-fim com um cliente SMB real.
 - [!] **Risco confirmado:** a extração de arquivo de dentro do zip no archive.org
       retorna **503 intermitente** (serviço pesado/rate-limited). A *listagem* do
       zip funciona. → `ArtProvider` com retry/backoff, falha graciosa e **base URL
@@ -84,9 +89,15 @@ share.
       recarrega ao escolher a pasta e ao iniciar; enriquecimento lê o Game ID de
       cada ISO via `iso::read_game_id`. `scan_games_with_paths` na `infra` expõe os
       caminhos; `OplMeta::from_games` persiste o cache enriquecido.
-- [ ] Share: autenticação opcional usuário/senha (`ShareConfig` + `smbpasswd`),
-      toggle na UI, comunicando o trade-off; mantém o guest como padrão.
-- [ ] Manter cobertura do `core` (parsers novos cobertos por teste).
+- [x] Share: autenticação opcional usuário/senha. `core`: `ShareAuth` (`Guest`/
+      `User{username}`, **sem senha** — transitória) + campo `auth` no
+      `ShareConfig`. `infra/smb_script`: bloco de acesso ramificado
+      (`guest ok = yes` vs `guest ok = no`+`valid users`), `smbpasswd -s -a` na
+      mesma janela root (guarda de usuário existente; senha via stdin, escapada),
+      `smbpasswd -x` no rollback. `infra/smb_backend`: `auth_password` transitório
+      + `Debug` redigido. `ui`: toggle + campo senha + aviso do trade-off; guest
+      é o padrão. 9 testes novos (smb_script 7, smb_backend 2).
+- [x] Manter cobertura do `core` (parsers novos cobertos por teste).
 
 ## Critérios de aceitação
 - [x] Game ID extraído corretamente de ao menos uma ISO real de PS2 (validado com
@@ -95,7 +106,10 @@ share.
       execução real com `OPL_BACKUP`.
 - [ ] Capa baixada por Game ID e gravada em `ART/` com a nomenclatura do OPL;
       OPL reconhece.
-- [ ] Autenticação opcional funciona (conexão com usuário/senha além do guest).
+- [~] Autenticação opcional funciona (conexão com usuário/senha além do guest).
+      Conf gerado e validado com `testparm` (Samba 4.23.x); fluxo `smbpasswd`/
+      `valid users` implementado e coberto por teste. **Pendente:** conexão real
+      de um cliente SMB autenticando — testar junto com a validação do OPL.
 - [ ] Sem scraping: apenas fontes consumíveis (§7).
 
 ## Riscos e mitigação
@@ -118,3 +132,4 @@ share.
 | 2026-06-27 | `core`: `GameMeta` ganha `game_id`/`title`; `derive_title`; cache v2 com `serde(default)` (compat v1). core 29 testes verdes | _(pendente)_ |
 | 2026-06-27 | UI: catálogo rico (`ListView` título/ID/mídia/tamanho + resumo) e botão "Baixar capas"; `scan_games_with_paths` + `OplMeta::from_games`. infra 28 testes verdes | _(pendente)_ |
 | 2026-06-27 | Validação real: leitor ISO9660 + extração de Game ID + catálogo rico confirmados com o backup `OPL_BACKUP` do usuário (2 critérios de aceitação fechados) | _(pendente)_ |
+| 2026-06-27 | Auth opcional usuário/senha: `core` `ShareAuth`; `infra` `valid users`/`smbpasswd` (stdin, escapado) + `smbpasswd -x` no rollback + `Debug` redigido; `ui` toggle/senha/aviso. Conf autenticado validado com `testparm`. core 29 / infra 36 testes verdes | _(pendente)_ |
