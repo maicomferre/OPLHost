@@ -17,9 +17,12 @@ struct GameRow {
 export component AppWindow inherits Window {
     title: "oplhost — servidor OPL";
     preferred-width: 600px;
-    preferred-height: 660px;
+    preferred-height: 740px;
     min-width: 520px;
-    min-height: 560px;
+    // Sem min-height explícito de propósito: o Slint deriva o mínimo da janela
+    // do layout (lista no seu `min-height` + tudo que é fixo). Como a área de
+    // status tem altura reservada (não é condicional), esse mínimo é constante
+    // e SEMPRE cabe o aviso de SMBv1 e os botões — eles nunca são cortados.
 
     in property <string> status-text: "Parado";
     in property <string> ip-text: "—";
@@ -43,8 +46,8 @@ export component AppWindow inherits Window {
     callback dir-path-edited();
 
     VerticalBox {
-        padding: 16px;
-        spacing: 12px;
+        padding: 12px;
+        spacing: 10px;
 
         Text {
             text: "oplhost";
@@ -130,14 +133,16 @@ export component AppWindow inherits Window {
                     font-weight: 600;
                 }
                 ListView {
-                    min-height: 96px;
+                    min-height: 80px;
                     vertical-stretch: 1;
                     for row[idx] in root.catalog-rows: Rectangle {
                         height: 26px;
                         background: Math.mod(idx, 2) == 0 ? transparent : #00000008;
                         HorizontalBox {
                             padding-left: 6px;
-                            padding-right: 6px;
+                            // Gutter à direita pro scrollbar nativo do ListView
+                            // não cobrir a coluna de tamanho.
+                            padding-right: 18px;
                             padding-top: 2px;
                             padding-bottom: 2px;
                             spacing: 8px;
@@ -176,10 +181,18 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.message-text != "": Text {
-            text: root.message-text;
-            wrap: word-wrap;
-            color: #d33682;
+        // Área de status/erro com altura reservada: mostrar ou ocultar a
+        // mensagem não reflui o layout (não empurra o aviso nem os botões).
+        Rectangle {
+            height: 36px;
+            Text {
+                width: 100%;
+                text: root.message-text;
+                wrap: word-wrap;
+                overflow: elide;
+                vertical-alignment: center;
+                color: #d33682;
+            }
         }
 
         Text {
