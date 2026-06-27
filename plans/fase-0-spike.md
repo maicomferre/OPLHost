@@ -33,21 +33,30 @@ guest, antes de investir em qualquer arquitetura.
 | 2026-06-26 | Validação local com `smbclient` forçando `client min/max protocol = NT1` | Prova o lado servidor sem depender do PS2; sinal local mais forte possível | Só inspecionar `testparm` (não prova conexão real) |
 
 ## A validar no ambiente
-- [ ] `testparm -s /etc/samba/opl_share.conf` carrega sem erro fatal (avisos de
-      weak crypto são esperados).
-- [ ] Após `apply`, `server min protocol` reportado como `NT1`.
-- [ ] `smbclient //localhost/PS2SMB -N --option='client min protocol=NT1'
-      --option='client max protocol=NT1' -c 'ls'` lista a pasta.
+- [x] `testparm -s /etc/samba/opl_share.conf` carrega sem erro fatal. Avisos
+      esperados confirmados: `"lanman auth" option is deprecated` e `Weak crypto
+      is allowed by GnuTLS (e.g. NTLM as a compatibility fallback)`. O Samba
+      traduz `ntlm auth = yes` para `ntlm auth = ntlmv1-permitted`.
+- [x] Após `apply`, `server min protocol` reportado como `NT1`.
+- [x] `smbclient` NT1 guest **conecta, lista E escreve** no share (`Anonymous
+      login successful`; `put` de arquivo de teste OK; `force user = maicom`
+      aplicado — arquivo gravado como `maicom`).
 - [ ] Conexão de um **PS2 com OPL real** ao share (porta 445, IP local) — feito
-      pelo usuário.
+      pelo usuário. **← único item pendente para aprovar a fase.**
+
+### Resultado da validação local (2026-06-26)
+Ambiente: Samba 4.23.6. O esqueleto de config do spike **funciona sem ajustes**:
+o servidor passou a aceitar conexão SMBv1 (NT1) guest com leitura e escrita. Os
+avisos de crypto fraca são esperados e fazem parte do trade-off do OPL.
 
 ## Tarefas
 - [x] Escrever o spike (`apply`/`rollback`).
 - [x] Compilar o spike isoladamente.
-- [ ] Rodar `apply` e validar localmente com `smbclient` (NT1).
-- [ ] Registrar o resultado da validação local aqui.
+- [x] Rodar `apply` e validar localmente com `smbclient` (NT1).
+- [x] Registrar o resultado da validação local aqui.
 - [ ] Usuário confirma conexão do PS2 real.
-- [ ] Após confirmação: remover `spike/` e marcar a fase como Concluída.
+- [ ] Após confirmação: rodar `rollback`, remover `spike/` e marcar a fase como
+      Concluída.
 
 ## Critérios de aceitação
 - [ ] `smbclient` NT1 local conecta e lista o share.
@@ -65,4 +74,5 @@ guest, antes de investir em qualquer arquitetura.
 ## Histórico
 | Data | Mudança | Commit |
 |------|---------|--------|
-| 2026-06-26 | Spike criado e compilando; plano da fase aberto | _(pendente)_ |
+| 2026-06-26 | Spike criado e compilando; plano da fase aberto | `b8e355e` |
+| 2026-06-26 | Validação local OK (NT1 guest lê/escreve); pendente só o PS2 real | _(pendente)_ |
