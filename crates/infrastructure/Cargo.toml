@@ -8,7 +8,7 @@ edition = "2024"
 # depende daqui.
 [dependencies]
 oplhost-core = { path = "../core" }
-
-# Adicionar quando implementar os adapters (versões a confirmar no ambiente):
-#   serde / serde_json  -> MetaStore (opl_meta.json)
-#   zbus                -> PrivilegeEscalator (Polkit via D-Bus)
+# Persistência do opl_meta.json (MetaStore). A elevação de privilégio usa
+# `pkexec` (já presente com o Polkit do sistema), então `zbus` não é necessário
+# nesta fase — fica para um caminho D-Bus direto se vier a ser preciso.
+serde_json = "1"

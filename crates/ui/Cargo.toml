@@ -2,6 +2,9 @@
 name = "oplhost"
 version = "0.1.0"
 edition = "2024"
+description = "Servidor SMB dedicado ao Open PS2 Loader (OPL) para Linux"
+license = "MIT"
+authors = ["Maicom Ferreira <maicomferre3242@gmail.com>"]
 
 # Binário principal. A UI (Slint) consome o core via mensagens/callbacks e
 # nunca acessa a infrastructure diretamente. Mantida desacoplada o suficiente
@@ -17,3 +20,17 @@ slint = "1"
 
 [build-dependencies]
 slint-build = "1"
+
+# Empacotamento .deb (V1, §9). Gerar com `cargo deb -p oplhost` (requer o
+# cargo-deb instalado). Runtime-dep: samba (smbd) e polkit (pkexec) — sem elas o
+# app não serve o share nem escala privilégio; libfontconfig1 para o renderer do
+# Slint. O postinst reconfirma e orienta. Build-dep no ambiente: libfontconfig-dev.
+[package.metadata.deb]
+section = "utils"
+priority = "optional"
+depends = "samba, policykit-1, libfontconfig1"
+maintainer-scripts = "packaging/"
+assets = [
+    ["target/release/oplhost", "usr/bin/", "755"],
+    ["packaging/oplhost.desktop", "usr/share/applications/", "644"],
+]

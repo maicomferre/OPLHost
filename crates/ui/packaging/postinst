@@ -1,0 +1,23 @@
+#!/bin/sh
+# postinst do oplhost — valida as dependências de sistema (§9 do CLAUDE.md).
+# `samba` e `polkit` constam em Depends (o dpkg já as garante), mas reconfirmamos
+# e orientamos o usuário, pois sem elas o app não consegue servir o share nem
+# escalar privilégio. Avisos não bloqueiam a instalação.
+set -e
+
+case "$1" in
+    configure)
+        if ! command -v smbd >/dev/null 2>&1; then
+            echo "oplhost: aviso — 'smbd' (pacote samba) não encontrado." >&2
+            echo "         instale com: sudo apt install samba" >&2
+        fi
+        if ! command -v pkexec >/dev/null 2>&1; then
+            echo "oplhost: aviso — 'pkexec' (Polkit) não encontrado." >&2
+            echo "         instale com: sudo apt install policykit-1" >&2
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -3371,12 +3371,17 @@ dependencies = [
 [[package]]
 name = "oplhost-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "oplhost-infra"
 version = "0.1.0"
 dependencies = [
  "oplhost-core",
+ "serde_json",
 ]
 
 [[package]]

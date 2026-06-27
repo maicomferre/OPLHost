@@ -1,11 +1,23 @@
 //! `oplhost-infra` — adapters reais que implementam os ports do `core`.
 //!
-//! Estado atual (scaffold da Fase 1): `RealFs` já é funcional; `SmbBackend`
-//! ainda é stub — sua lógica vem da prova de conceito do `spike/` (Fase 0) e
-//! será portada quando o teste com PS2 real confirmar a fase.
+//! Estado da Fase 1: `RealFs` e `SmbBackend` funcionais (lógica portada do
+//! spike validado na Fase 0); `JsonMetaStore` persiste o `opl_meta.json`;
+//! `PkexecEscalator` agrupa as operações root numa janela Polkit; o
+//! `FirewallManager` abre/fecha a porta. Tudo depende do `core`; o `core`
+//! nunca depende daqui.
 
+pub mod firewall;
+pub mod meta_store;
+pub mod net;
+pub mod privilege;
 pub mod real_fs;
+pub mod scan;
 pub mod smb_backend;
+pub mod smb_script;
 
+pub use firewall::{FirewallManager, Protocol};
+pub use meta_store::JsonMetaStore;
+pub use privilege::{PkexecEscalator, PrivilegeEscalator};
 pub use real_fs::RealFs;
 pub use smb_backend::SmbBackend;
+pub use smb_script::{build_apply_script, build_rollback_script, build_smb_conf, SmbPaths};

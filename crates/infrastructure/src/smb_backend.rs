@@ -1,50 +1,158 @@
 //! `SmbBackend` — implementação de `StorageBackend` para Samba (SMBv1/NT1).
 //!
-//! STUB do scaffold da Fase 1. A lógica real (gerar `opl_share.conf`, injetar o
-//! `include` de forma idempotente, reiniciar `smbd` e abrir a porta 445 numa
-//! única janela Polkit) está provada no `spike/` da Fase 0 e será portada para
-//! cá quando a fase for aprovada com PS2 real. Caminhos de referência:
-//!   /etc/samba/opl_share.conf  +  include no /etc/samba/smb.conf
+//! Porta a lógica validada na Fase 0 (ver `plans/fase-0-spike.md`): gera o
+//! `opl_share.conf` isolado, injeta o `include` idempotente, reinicia o `smbd` e
+//! abre a porta 445 — tudo numa ÚNICA janela de privilégio via o
+//! `PrivilegeEscalator`. O rollback desfaz tudo (§0). A montagem dos scripts é
+//! pura (`smb_script`); aqui só compomos e delegamos.
+
+use std::process::Command;
 
 use oplhost_core::{BackendError, ServerStatus, ShareConfig, StorageBackend};
 
-/// Backend Samba. Mantém o caminho do share isolado para gerar/reverter config.
+use crate::net;
+use crate::privilege::{PkexecEscalator, PrivilegeEscalator};
+use crate::smb_script::{build_apply_script, build_rollback_script, SmbPaths};
+
+/// Backend Samba, genérico sobre o escalador de privilégio (injetável nos testes).
 #[derive(Debug, Clone)]
-pub struct SmbBackend {
-    /// Arquivo de config isolado gerenciado pelo app (nunca o smb.conf global).
-    pub share_conf_path: String,
+pub struct SmbBackend<E: PrivilegeEscalator = PkexecEscalator> {
+    paths: SmbPaths,
+    escalator: E,
+    /// Config a aplicar/reverter. Necessária para `rollback` fechar a mesma
+    /// porta que `apply_config` abriu.
+    cfg: ShareConfig,
 }
 
-impl Default for SmbBackend {
-    fn default() -> Self {
+impl SmbBackend<PkexecEscalator> {
+    /// Backend pronto para produção (Polkit via `pkexec`) com caminhos padrão.
+    pub fn new(cfg: ShareConfig) -> Self {
         Self {
-            share_conf_path: "/etc/samba/opl_share.conf".to_string(),
+            paths: SmbPaths::default(),
+            escalator: PkexecEscalator,
+            cfg,
         }
     }
 }
 
-impl StorageBackend for SmbBackend {
-    fn apply_config(&self, _cfg: &ShareConfig) -> Result<(), BackendError> {
-        // TODO(fase-1): portar do spike — gerar opl_share.conf (SMBv1), injetar
-        // include idempotente, reiniciar smbd e abrir porta 445 via 1 pkexec.
-        todo!("portar lógica validada no spike da Fase 0")
+impl<E: PrivilegeEscalator> SmbBackend<E> {
+    /// Constrói com escalador e caminhos explícitos (usado nos testes).
+    pub fn with_parts(cfg: ShareConfig, paths: SmbPaths, escalator: E) -> Self {
+        Self {
+            paths,
+            escalator,
+            cfg,
+        }
+    }
+
+    /// Consulta `systemctl is-active smbd` (leitura, não precisa de root).
+    fn smbd_active(&self) -> bool {
+        Command::new("systemctl")
+            .args(["is-active", "smbd"])
+            .output()
+            .map(|o| o.stdout.starts_with(b"active"))
+            .unwrap_or(false)
+    }
+}
+
+impl<E: PrivilegeEscalator> StorageBackend for SmbBackend<E> {
+    fn apply_config(&self, cfg: &ShareConfig) -> Result<(), BackendError> {
+        // §8: se o smbd está parado mas a porta já tem dono, é outro serviço.
+        if !self.smbd_active() && net::tcp_port_listening(cfg.port) {
+            return Err(BackendError::PortInUse(cfg.port));
+        }
+        let script = build_apply_script(&self.paths, cfg);
+        self.escalator.run_root_script(&script)
     }
 
     fn start(&self) -> Result<(), BackendError> {
-        todo!("systemctl start smbd via PrivilegeEscalator")
+        self.escalator.run_root_script("systemctl start smbd")
     }
 
     fn stop(&self) -> Result<(), BackendError> {
-        todo!("systemctl stop smbd via PrivilegeEscalator")
+        self.escalator.run_root_script("systemctl stop smbd")
     }
 
     fn status(&self) -> Result<ServerStatus, BackendError> {
-        todo!("consultar estado do smbd")
+        if self.smbd_active() {
+            Ok(ServerStatus::Running)
+        } else {
+            Ok(ServerStatus::Stopped)
+        }
     }
 
     fn rollback(&self) -> Result<(), BackendError> {
-        // TODO(fase-1): remover opl_share.conf + linha de include, reiniciar
-        // smbd e remover a regra de firewall (numa única janela Polkit).
-        todo!("portar rollback validado no spike da Fase 0")
+        let script = build_rollback_script(&self.paths, &self.cfg);
+        self.escalator.run_root_script(&script)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    /// Escalador mock: captura o script que receberia, sem rodar nada como root.
+    #[derive(Default)]
+    struct RecordingEscalator {
+        scripts: RefCell<Vec<String>>,
+    }
+
+    impl PrivilegeEscalator for RecordingEscalator {
+        fn run_root_script(&self, script: &str) -> Result<(), BackendError> {
+            self.scripts.borrow_mut().push(script.to_string());
+            Ok(())
+        }
+    }
+
+    fn cfg() -> ShareConfig {
+        ShareConfig {
+            target_dir: PathBuf::from("/mnt/ps2"),
+            share_name: "PS2SMB".to_string(),
+            port: 445,
+            owner_user: "maicom".to_string(),
+        }
+    }
+
+    #[test]
+    fn apply_config_entrega_um_unico_script_com_tudo() {
+        let esc = RecordingEscalator::default();
+        let backend = SmbBackend::with_parts(cfg(), SmbPaths::default(), esc);
+
+        backend.apply_config(&cfg()).unwrap();
+
+        let scripts = backend.escalator.scripts.borrow();
+        assert_eq!(scripts.len(), 1, "tudo numa única janela de privilégio");
+        let s = &scripts[0];
+        assert!(s.contains("opl_share.conf"));
+        assert!(s.contains("systemctl restart smbd"));
+        assert!(s.contains("ufw allow 445/tcp"));
+    }
+
+    #[test]
+    fn rollback_fecha_a_mesma_porta_e_remove_o_include() {
+        let esc = RecordingEscalator::default();
+        let backend = SmbBackend::with_parts(cfg(), SmbPaths::default(), esc);
+
+        backend.rollback().unwrap();
+
+        let scripts = backend.escalator.scripts.borrow();
+        let s = &scripts[0];
+        assert!(s.contains("rm -f /etc/samba/opl_share.conf"));
+        assert!(s.contains("ufw delete allow 445/tcp || true"));
+    }
+
+    #[test]
+    fn start_e_stop_usam_systemctl_via_escalador() {
+        let esc = RecordingEscalator::default();
+        let backend = SmbBackend::with_parts(cfg(), SmbPaths::default(), esc);
+
+        backend.start().unwrap();
+        backend.stop().unwrap();
+
+        let scripts = backend.escalator.scripts.borrow();
+        assert_eq!(scripts[0], "systemctl start smbd");
+        assert_eq!(scripts[1], "systemctl stop smbd");
     }
 }

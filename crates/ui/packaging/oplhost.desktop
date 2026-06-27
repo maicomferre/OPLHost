@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=oplhost
+Comment=Servidor SMB dedicado ao Open PS2 Loader (OPL)
+Comment[en]=Dedicated SMB server for the Open PS2 Loader (OPL)
+Exec=oplhost
+Terminal=false
+Categories=Utility;System;Network;
+Keywords=PS2;OPL;Samba;SMB;

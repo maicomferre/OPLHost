@@ -4,9 +4,10 @@
 > (SMBv1 confirmado com PS2). O scaffold inicial (esqueleto que compila e roda)
 > é montado ainda durante a Fase 0, mas os Traits derivam do que o spike provou.
 
-- **Status:** Planejado
+- **Status:** Em andamento
 - **Criado em:** 2026-06-26
-- **Última atualização:** 2026-06-26 (scaffold inicial montado)
+- **Última atualização:** 2026-06-27 (spike portado para `SmbBackend`; adapters,
+  catálogo/meta e fiação da UI feitos)
 
 ## Contexto e objetivo
 Transformar o aprendizado do spike numa arquitetura Clean (Ports & Adapters)
@@ -29,12 +30,19 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 | 2026-06-26 | Workspace Cargo com 3 crates (`core`, `infrastructure`, `ui`) | Inversão de dependência imposta pelo compilador; troca Slint→egui não toca o `core` | Crate único com módulos (separação só por convenção) |
 | 2026-06-26 | `core` define um Trait `Fs` (port de filesystem) | Manter o `core` testável sem tocar disco; mockável nos testes de estrutura de pastas | I/O direto no `core` (quebraria a testabilidade e a regra de inversão) |
 | 2026-06-26 | `StorageBackend` genérico (sem pressupor SMB) já desde o esqueleto | Acomodar um futuro `UdpbdBackend` sem refatoração dolorosa | Trait casado com SMB/`smb.conf` (travaria o backend alternativo) |
+| 2026-06-27 | Construção dos scripts (`opl_share.conf`, apply, rollback) em funções PURAS (`smb_script`) | A parte mais sujeita a erro fica testável sem root nem disco; o backend só compõe e delega | Montar o script dentro do `SmbBackend` (intestável sem `pkexec`) |
+| 2026-06-27 | `PrivilegeEscalator` como Trait; `SmbBackend` genérico sobre ele | Testar a composição do script com um escalador mock que captura o texto | `pkexec` chamado direto no backend (sem como mockar) |
+| 2026-06-27 | Elevação via `pkexec` em vez de `zbus`/D-Bus nesta fase | `pkexec` já vem com o Polkit; um script único satisfaz a "janela de privilégio" sem reimplementar o protocolo Polkit | `zbus` falando com o `polkitd` (mais código, sem ganho na V1) |
+| 2026-06-27 | Iniciar = `apply_config`; Parar = `rollback` (não só `stop`) | Não deixar SMBv1 legado + porta aberta residual; alinhado à transparência/revertibilidade do §0 | "Parar" só `systemctl stop smbd` (deixaria a config legada no sistema) |
+| 2026-06-27 | Diretório por campo de texto (sem seletor nativo ainda) | Fecha o fluxo ponta a ponta sem arriscar build-deps de GTK do `rfd` neste passo | Adicionar `rfd` já (risco de quebra de build por libs de sistema) |
 
 ## A validar no ambiente
 - [x] Slint resolvido em `1.17.0` (dep declarada como `slint = "1"`).
-- [ ] Versão atual do `zbus` para Polkit/D-Bus.
-- [ ] Esqueleto final do `opl_share.conf` confirmado pela Fase 0 (portar para o
-      `SmbBackend`).
+- [x] `zbus` dispensado nesta fase: a elevação usa `pkexec` (já presente com o
+      Polkit do sistema), agrupando tudo numa janela só. Caminho D-Bus direto
+      fica para se vier a ser necessário.
+- [x] Esqueleto final do `opl_share.conf` portado para `SmbBackend` via
+      `smb_script::build_smb_conf` (idêntico ao validado na Fase 0).
 - [x] **Dependência de build do Slint:** `libfontconfig-dev` (o renderer femtovg
       exige `fontconfig.pc`). Instalada no ambiente. Em runtime basta
       `libfontconfig1` (já presente). Considerar no `.deb`: build-dep
@@ -51,10 +59,25 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
       aviso de SMBv1).
 - [x] `cargo build` do workspace e `cargo run -p oplhost` funcionando (janela
       abre sem panic).
-- [ ] Portar a lógica do spike para o `SmbBackend` (após PS2 real aprovar a Fase 0).
-- [ ] Adapters restantes: `FirewallManager`, `PrivilegeEscalator`, `MetaStore`.
-- [ ] Elevar a cobertura do `core` para ≥ 70%.
-- [ ] Empacotamento `.deb` com `postinst` validando `samba` e `polkit`.
+- [x] Portar a lógica do spike para o `SmbBackend`: `smb_script` (construtores
+      puros de `opl_share.conf` + apply/rollback, testados), `apply_config`/
+      `rollback`/`start`/`stop`/`status` reais; precheck de porta ocupada (§8).
+- [x] Adapters restantes: `FirewallManager` (fragmentos ufw/iptables),
+      `PkexecEscalator` (janela única Polkit), `JsonMetaStore` (opl_meta.json).
+      Extras: `net::local_ip`/`tcp_port_listening`, `scan::scan_games`.
+- [x] `core`: módulos `catalog` (contagem/tamanho/categoria CD≤700MB/DVD) e
+      `meta` (`OplMeta`, reconstrução sem JSON) com testes — cobertura dos
+      módulos com lógica em 100%.
+- [x] Fiação da UI: campo de diretório, IP local, start (apply) / stop
+      (rollback), status real do `smbd`, catálogo; mensagens de erro sem panic.
+- [x] Empacotamento `.deb`: metadata `cargo-deb`, `.desktop` e `postinst`
+      validando `samba`/`polkit`. **Gerar de fato com `cargo deb` ainda pendente
+      (ferramenta não instalada no ambiente).**
+- [ ] Substituir o campo de texto do diretório por um seletor nativo de pasta
+      (avaliar `rfd` xdg-portal vs. diálogo do Slint) — evitado agora para não
+      arriscar build-deps de GTK.
+- [ ] Rodar `apply`/`rollback` reais ponta a ponta com Polkit (teste manual com
+      senha) e gerar/instalar o `.deb`.
 
 ## Critérios de aceitação
 - [ ] App abre, inicia/para o servidor SMB e mostra IP/instruções de conexão.
@@ -74,3 +97,4 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 |------|---------|--------|
 | 2026-06-26 | Plano da fase aberto | `b8e355e` |
 | 2026-06-26 | Scaffold que compila e roda: workspace 3 crates, core testado, infra com stubs, janela Slint | _(pendente)_ |
+| 2026-06-27 | Spike portado para `SmbBackend` (escalador Polkit, firewall, scripts puros testados); `core` ganha `catalog`+`meta`; `JsonMetaStore`/`scan`/`net`; UI fiada ao backend; metadata `.deb`. 28 testes verdes, clippy limpo | _(pendente)_ |
