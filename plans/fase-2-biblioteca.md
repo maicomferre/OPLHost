@@ -7,8 +7,8 @@
 
 - **Status:** Em andamento
 - **Criado em:** 2026-06-27
-- **Última atualização:** 2026-06-27 (`GameMeta` enriquecido com `game_id` e
-  `title`; `derive_title` no `core`; schema do cache v2)
+- **Última atualização:** 2026-06-27 (UI: catálogo rico em `ListView` com
+  título/ID/mídia/tamanho + botão "Baixar capas" na worker thread)
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
@@ -78,8 +78,11 @@ share.
       nomes do OPL; cache (não rebaixa o que já existe); falhas sem crash. Rede
       atrás do Trait `HttpGet` (mock nos testes); `UreqClient` real com
       retry/backoff em 502/503/504; base URL configurável. 6 testes.
-- [ ] `ui`: listagem rica (título/ID/mídia/tamanho + contagem/total) e ação de
-      "baixar capas" (na worker thread).
+- [x] `ui`: listagem rica em `ListView` (título/ID/mídia/tamanho) + linha-resumo
+      (contagem/total formatado) e botão "Baixar capas" na worker thread. Catálogo
+      recarrega ao escolher a pasta e ao iniciar; enriquecimento lê o Game ID de
+      cada ISO via `iso::read_game_id`. `scan_games_with_paths` na `infra` expõe os
+      caminhos; `OplMeta::from_games` persiste o cache enriquecido.
 - [ ] Share: autenticação opcional usuário/senha (`ShareConfig` + `smbpasswd`),
       toggle na UI, comunicando o trade-off; mantém o guest como padrão.
 - [ ] Manter cobertura do `core` (parsers novos cobertos por teste).
@@ -110,3 +113,4 @@ share.
 | 2026-06-27 | Pesquisa de endpoints: fonte OPLM (archive.org), estrutura `PS2/<id>/<id>_COV.jpg`, sufixos do OPL; `ureq` 3.3.0 confirmado; risco 503 registrado | _(pendente)_ |
 | 2026-06-27 | `infra`: `ArtProvider` (Trait `HttpGet` + mock, `UreqClient` real com retry/backoff 502-504, base URL configurável). infra 27 testes verdes | _(pendente)_ |
 | 2026-06-27 | `core`: `GameMeta` ganha `game_id`/`title`; `derive_title`; cache v2 com `serde(default)` (compat v1). core 29 testes verdes | _(pendente)_ |
+| 2026-06-27 | UI: catálogo rico (`ListView` título/ID/mídia/tamanho + resumo) e botão "Baixar capas"; `scan_games_with_paths` + `OplMeta::from_games`. infra 28 testes verdes | _(pendente)_ |

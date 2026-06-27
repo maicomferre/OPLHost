@@ -101,6 +101,15 @@ impl OplMeta {
         }
     }
 
+    /// Monta o cache a partir de entradas já enriquecidas (com Game ID lido da
+    /// ISO pela infraestrutura). Usado pela UI ao listar o catálogo rico.
+    pub fn from_games(games: Vec<GameMeta>) -> Self {
+        Self {
+            version: META_VERSION,
+            games,
+        }
+    }
+
     /// Resumo agregado equivalente ao do catálogo, sem reabrir o disco.
     pub fn summary(&self) -> CatalogSummary {
         let mut s = CatalogSummary::default();

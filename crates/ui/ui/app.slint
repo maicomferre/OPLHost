@@ -1,4 +1,13 @@
-import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit, ListView } from "std-widgets.slint";
+
+// Uma linha do catálogo rico. Preenchida pelo binário (raiz de composição) a
+// partir do `GameMeta` do core; campos já formatados para exibição.
+struct GameRow {
+    title: string,
+    game-id: string,
+    media: string,
+    size: string,
+}
 
 // Janela funcional da Fase 1: seleção do diretório-alvo, status do servidor,
 // IP/instruções de conexão, catálogo e start/stop. A lógica de negócio vive no
@@ -7,12 +16,13 @@ import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit } from "std-widg
 // requisito de transparência (§0/§8).
 export component AppWindow inherits Window {
     title: "oplhost — servidor OPL";
-    preferred-width: 560px;
-    preferred-height: 460px;
+    preferred-width: 600px;
+    preferred-height: 620px;
 
     in property <string> status-text: "Parado";
     in property <string> ip-text: "—";
-    in property <string> catalog-text: "Nenhum diretório carregado.";
+    in property <string> catalog-summary: "Nenhum diretório carregado.";
+    in property <[GameRow]> catalog-rows: [];
     in property <string> message-text: "";
     in-out property <string> dir-path: "";
     in property <bool> busy: false;
@@ -20,6 +30,7 @@ export component AppWindow inherits Window {
     callback start-clicked();
     callback stop-clicked();
     callback choose-dir-clicked();
+    callback download-art-clicked();
 
     VerticalBox {
         padding: 16px;
@@ -60,7 +71,59 @@ export component AppWindow inherits Window {
             VerticalBox {
                 Text { text: "Status: " + root.status-text; }
                 Text { text: "IP local (digite no OPL): " + root.ip-text; }
-                Text { text: root.catalog-text; }
+            }
+        }
+
+        GroupBox {
+            title: "Catálogo";
+            VerticalBox {
+                spacing: 6px;
+                Text {
+                    text: root.catalog-summary;
+                    font-weight: 600;
+                }
+                ListView {
+                    min-height: 180px;
+                    for row[idx] in root.catalog-rows: Rectangle {
+                        height: 26px;
+                        background: Math.mod(idx, 2) == 0 ? transparent : #00000008;
+                        HorizontalBox {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            padding-top: 2px;
+                            padding-bottom: 2px;
+                            spacing: 8px;
+                            Text {
+                                text: row.title;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: row.game-id;
+                                width: 96px;
+                                color: #888;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: row.media;
+                                width: 36px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: row.size;
+                                width: 72px;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                Button {
+                    text: "Baixar capas";
+                    enabled: !root.busy;
+                    clicked => { root.download-art-clicked(); }
+                }
             }
         }
 
