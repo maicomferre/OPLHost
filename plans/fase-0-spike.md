@@ -5,9 +5,9 @@
 > (NT1). Enquanto isto não estiver provado com um cliente real, nada da
 > arquitetura definitiva é considerado válido.
 
-- **Status:** Em andamento
+- **Status:** Concluído
 - **Criado em:** 2026-06-26
-- **Última atualização:** 2026-06-26
+- **Última atualização:** 2026-06-26 (PS2 real confirmado; spike removido)
 
 ## Contexto e objetivo
 O OPL só fala SMBv1 (CIFS/NT1), protocolo que o Samba moderno desabilita por
@@ -41,8 +41,8 @@ guest, antes de investir em qualquer arquitetura.
 - [x] `smbclient` NT1 guest **conecta, lista E escreve** no share (`Anonymous
       login successful`; `put` de arquivo de teste OK; `force user = maicom`
       aplicado — arquivo gravado como `maicom`).
-- [ ] Conexão de um **PS2 com OPL real** ao share (porta 445, IP local) — feito
-      pelo usuário. **← único item pendente para aprovar a fase.**
+- [x] Conexão de um **PS2 com OPL real** ao share (porta 445, IP local)
+      confirmada pelo usuário em 2026-06-26. **Premissa SMBv1 do projeto provada.**
 
 ### Resultado da validação local (2026-06-26)
 Ambiente: Samba 4.23.6. O esqueleto de config do spike **funciona sem ajustes**:
@@ -54,15 +54,16 @@ avisos de crypto fraca são esperados e fazem parte do trade-off do OPL.
 - [x] Compilar o spike isoladamente.
 - [x] Rodar `apply` e validar localmente com `smbclient` (NT1).
 - [x] Registrar o resultado da validação local aqui.
-- [ ] Usuário confirma conexão do PS2 real.
-- [ ] Após confirmação: rodar `rollback`, remover `spike/` e marcar a fase como
+- [x] Usuário confirma conexão do PS2 real.
+- [x] Após confirmação: rodar `rollback`, remover `spike/` e marcar a fase como
       Concluída.
 
 ## Critérios de aceitação
-- [ ] `smbclient` NT1 local conecta e lista o share.
-- [ ] `rollback` retorna o sistema ao estado anterior (sem `opl_share.conf`, sem
-      linha de include, regra de firewall removida).
-- [ ] Usuário confirma que o PS2/OPL real conecta.
+- [x] `smbclient` NT1 local conecta e lista o share.
+- [x] `rollback` retorna o sistema ao estado anterior (verificado: sem
+      `opl_share.conf`, sem linha de include, `server min protocol` de volta a
+      `SMB2_02`, regra de firewall removida).
+- [x] Usuário confirma que o PS2/OPL real conecta.
 
 ## Riscos e mitigação
 - **Risco:** Samba 4.23.6 rejeitar/avisar params legados (`lanman auth`,
@@ -75,4 +76,5 @@ avisos de crypto fraca são esperados e fazem parte do trade-off do OPL.
 | Data | Mudança | Commit |
 |------|---------|--------|
 | 2026-06-26 | Spike criado e compilando; plano da fase aberto | `b8e355e` |
-| 2026-06-26 | Validação local OK (NT1 guest lê/escreve); pendente só o PS2 real | _(pendente)_ |
+| 2026-06-26 | Validação local OK (NT1 guest lê/escreve); pendente só o PS2 real | `71adb33` |
+| 2026-06-26 | PS2 real confirmado; rollback verificado; spike removido; fase Concluída | _(pendente)_ |

@@ -9,7 +9,7 @@ verdade das **regras** atuais; estes arquivos guardam o **histórico de decisõe
 
 | Fase | Plano | Status |
 |------|-------|--------|
-| 0 | [fase-0-spike.md](fase-0-spike.md) — spike de validação SMBv1 | Em andamento |
+| 0 | [fase-0-spike.md](fase-0-spike.md) — spike de validação SMBv1 | ✅ Concluído |
 | 1 | [fase-1-nucleo.md](fase-1-nucleo.md) — núcleo funcional (core/infra/ui) | Planejado |
 
 Fases 2 e 3 (biblioteca/metadados, refinamento/UDPBD) ganham plano próprio
