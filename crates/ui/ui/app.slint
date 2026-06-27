@@ -1,0 +1,62 @@
+import { Button, VerticalBox, HorizontalBox, GroupBox } from "std-widgets.slint";
+
+// Janela mínima do scaffold da Fase 1: status do servidor, IP/instruções de
+// conexão e start/stop. A lógica de negócio vive no core; aqui só apresentação
+// e callbacks. O aviso de SMBv1 cumpre o requisito de transparência (§0/§8).
+export component AppWindow inherits Window {
+    title: "oplhost — servidor OPL";
+    preferred-width: 520px;
+    preferred-height: 360px;
+
+    in property <string> status-text: "Parado";
+    in property <string> ip-text: "—";
+    in property <string> share-path: "(nenhum diretório selecionado)";
+
+    callback start-clicked();
+    callback stop-clicked();
+    callback choose-dir-clicked();
+
+    VerticalBox {
+        padding: 16px;
+        spacing: 12px;
+
+        Text {
+            text: "oplhost";
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        GroupBox {
+            title: "Servidor";
+            VerticalBox {
+                Text { text: "Status: " + root.status-text; }
+                Text { text: "IP local: " + root.ip-text; }
+                Text { text: "Diretório OPL: " + root.share-path; }
+            }
+        }
+
+        Text {
+            text: "Atenção: o OPL exige SMBv1 (protocolo legado). O app reabilita "
+                + "esse protocolo num share isolado e abre a porta 445.";
+            wrap: word-wrap;
+            color: #b58900;
+        }
+
+        HorizontalBox {
+            spacing: 8px;
+            Button {
+                text: "Escolher diretório…";
+                clicked => { root.choose-dir-clicked(); }
+            }
+            Button {
+                text: "Iniciar";
+                primary: true;
+                clicked => { root.start-clicked(); }
+            }
+            Button {
+                text: "Parar";
+                clicked => { root.stop-clicked(); }
+            }
+        }
+    }
+}

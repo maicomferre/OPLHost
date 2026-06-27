@@ -6,7 +6,7 @@
 
 - **Status:** Planejado
 - **Criado em:** 2026-06-26
-- **Última atualização:** 2026-06-26
+- **Última atualização:** 2026-06-26 (scaffold inicial montado)
 
 ## Contexto e objetivo
 Transformar o aprendizado do spike numa arquitetura Clean (Ports & Adapters)
@@ -31,20 +31,28 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 | 2026-06-26 | `StorageBackend` genérico (sem pressupor SMB) já desde o esqueleto | Acomodar um futuro `UdpbdBackend` sem refatoração dolorosa | Trait casado com SMB/`smb.conf` (travaria o backend alternativo) |
 
 ## A validar no ambiente
-- [ ] Versão atual do Slint (fixar `1.x`).
+- [x] Slint resolvido em `1.17.0` (dep declarada como `slint = "1"`).
 - [ ] Versão atual do `zbus` para Polkit/D-Bus.
 - [ ] Esqueleto final do `opl_share.conf` confirmado pela Fase 0 (portar para o
       `SmbBackend`).
+- [x] **Dependência de build do Slint:** `libfontconfig-dev` (o renderer femtovg
+      exige `fontconfig.pc`). Instalada no ambiente. Em runtime basta
+      `libfontconfig1` (já presente). Considerar no `.deb`: build-dep
+      `libfontconfig-dev`; runtime-dep `libfontconfig1`.
 
 ## Tarefas
-- [ ] Converter a raiz em workspace e criar `crates/core`, `crates/infrastructure`,
+- [x] Converter a raiz em workspace e criar `crates/core`, `crates/infrastructure`,
       `crates/ui`.
-- [ ] `core`: Traits (`StorageBackend`, `Fs`), tipos de domínio, função de
-      estruturação de pastas do OPL, testes com `Fs` mockado.
-- [ ] `infrastructure`: `SmbBackend` (stub portando o spike), `RealFs`, demais
-      adapters como stub.
-- [ ] `ui`: janela Slint mínima que abre (status, diretório, start/stop, IP).
-- [ ] `cargo build` do workspace e `cargo run -p oplhost` funcionando.
+- [x] `core`: Traits (`StorageBackend`, `Fs`), tipos de domínio, função de
+      estruturação de pastas do OPL, testes com `Fs` mockado (3 testes, verdes).
+- [x] `infrastructure`: `SmbBackend` (stub `todo!()` portando o spike), `RealFs`
+      funcional; demais adapters a criar.
+- [x] `ui`: janela Slint mínima que abre (status, diretório, start/stop, IP,
+      aviso de SMBv1).
+- [x] `cargo build` do workspace e `cargo run -p oplhost` funcionando (janela
+      abre sem panic).
+- [ ] Portar a lógica do spike para o `SmbBackend` (após PS2 real aprovar a Fase 0).
+- [ ] Adapters restantes: `FirewallManager`, `PrivilegeEscalator`, `MetaStore`.
 - [ ] Elevar a cobertura do `core` para ≥ 70%.
 - [ ] Empacotamento `.deb` com `postinst` validando `samba` e `polkit`.
 
@@ -64,4 +72,5 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 ## Histórico
 | Data | Mudança | Commit |
 |------|---------|--------|
-| 2026-06-26 | Plano da fase aberto | _(pendente)_ |
+| 2026-06-26 | Plano da fase aberto | `b8e355e` |
+| 2026-06-26 | Scaffold que compila e roda: workspace 3 crates, core testado, infra com stubs, janela Slint | _(pendente)_ |

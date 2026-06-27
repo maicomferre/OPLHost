@@ -1,6 +1,7 @@
-[package]
-name = "oplhost"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
+# Workspace do oplhost. A separação em crates impõe, via compilador, a inversão
+# de dependência da Clean Architecture: `ui` e `infrastructure` dependem de
+# `core`, nunca o contrário. O spike/ da Fase 0 é descartável e fica de fora.
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/infrastructure", "crates/ui"]
+exclude = ["spike"]

@@ -1,0 +1,14 @@
+[package]
+name = "oplhost-infra"
+version = "0.1.0"
+edition = "2024"
+
+# infrastructure implementa os ports do core com adapters reais (filesystem,
+# backend SMB, firewall, Polkit, persistência). Depende de core; core nunca
+# depende daqui.
+[dependencies]
+oplhost-core = { path = "../core" }
+
+# Adicionar quando implementar os adapters (versões a confirmar no ambiente):
+#   serde / serde_json  -> MetaStore (opl_meta.json)
+#   zbus                -> PrivilegeEscalator (Polkit via D-Bus)

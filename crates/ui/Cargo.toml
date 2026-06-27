@@ -1,0 +1,19 @@
+[package]
+name = "oplhost"
+version = "0.1.0"
+edition = "2024"
+
+# Binário principal. A UI (Slint) consome o core via mensagens/callbacks e
+# nunca acessa a infrastructure diretamente. Mantida desacoplada o suficiente
+# para a eventual troca Slint -> egui não tocar o core.
+[[bin]]
+name = "oplhost"
+path = "src/main.rs"
+
+[dependencies]
+oplhost-core = { path = "../core" }
+oplhost-infra = { path = "../infrastructure" }
+slint = "1"
+
+[build-dependencies]
+slint-build = "1"

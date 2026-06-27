@@ -1,0 +1,8 @@
+[package]
+name = "oplhost-core"
+version = "0.1.0"
+edition = "2024"
+
+# core é puro: regras de negócio, tipos de domínio e Traits (ports).
+# Sem dependências de I/O, rede ou UI — é o que o torna testável isoladamente.
+[dependencies]
