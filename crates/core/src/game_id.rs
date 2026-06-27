@@ -73,6 +73,36 @@ pub fn parse_boot2_game_id(system_cnf: &str) -> Option<GameId> {
     None
 }
 
+/// Extensões de imagem de PS2 reconhecidas ao derivar o título do nome do arquivo.
+const IMAGE_EXTS: [&str; 4] = ["iso", "zso", "cso", "bin"];
+
+/// Remove a extensão de imagem (se houver) do nome do arquivo.
+fn strip_image_ext(name: &str) -> &str {
+    if let Some(dot) = name.rfind('.') {
+        let ext = &name[dot + 1..];
+        if IMAGE_EXTS.iter().any(|e| ext.eq_ignore_ascii_case(e)) {
+            return &name[..dot];
+        }
+    }
+    name
+}
+
+/// Deriva um título legível do nome do arquivo da ISO. Segue a convenção do
+/// OPL/PyOPLM `<GameID>.<Título>.iso` (ex.: `SLUS_200.02.God of War.iso` →
+/// `God of War`): tira a extensão e, se o nome começar com um Game ID seguido de
+/// `.`, remove esse prefixo. Sem o prefixo, usa o nome sem extensão como título.
+pub fn derive_title(file_name: &str) -> String {
+    let stem = strip_image_ext(file_name);
+    if let (Some(head), Some(rest)) = (stem.get(..11), stem.get(11..))
+        && let Some(title) = rest.strip_prefix('.')
+        && !title.is_empty()
+        && GameId::parse(head).is_some()
+    {
+        return title.trim().to_string();
+    }
+    stem.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +141,17 @@ mod tests {
     #[test]
     fn system_cnf_sem_boot2_retorna_none() {
         assert!(parse_boot2_game_id("VER = 1.00\nVMODE = NTSC\n").is_none());
+    }
+
+    #[test]
+    fn derive_title_remove_prefixo_de_game_id_e_extensao() {
+        assert_eq!(derive_title("SLUS_200.02.God of War.iso"), "God of War");
+        assert_eq!(derive_title("scus_973.13.gran turismo 4.ZSO"), "gran turismo 4");
+    }
+
+    #[test]
+    fn derive_title_sem_prefixo_usa_nome_sem_extensao() {
+        assert_eq!(derive_title("Shadow of the Colossus.iso"), "Shadow of the Colossus");
+        assert_eq!(derive_title("sem_extensao_conhecida.dat"), "sem_extensao_conhecida.dat");
     }
 }

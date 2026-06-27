@@ -7,8 +7,8 @@
 
 - **Status:** Em andamento
 - **Criado em:** 2026-06-27
-- **Última atualização:** 2026-06-27 (`ArtProvider` na `infra`: download de capa
-  por Game ID com `HttpGet`/mock, `UreqClient` real e retry/backoff)
+- **Última atualização:** 2026-06-27 (`GameMeta` enriquecido com `game_id` e
+  `title`; `derive_title` no `core`; schema do cache v2)
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
@@ -70,7 +70,10 @@ share.
 - [x] `infra`: `iso::read_game_id(path)` — traversal + leitura do `SYSTEM.CNF`,
       delegando o parse ao `core`; lê só PVD + raiz + `SYSTEM.CNF`. Testado com
       ISO mínima sintética construída no teste.
-- [ ] `core`/`meta`: enriquecer `GameMeta` com `game_id` e `title`; catálogo rico.
+- [x] `core`/`meta`: enriquecer `GameMeta` com `game_id` (`Option<GameId>`) e
+      `title` (derivado do nome via `derive_title`, convenção `<GameID>.<Título>`);
+      schema v2 com `#[serde(default)]` para um cache v1 ainda carregar (§6). 5
+      testes novos.
 - [x] `infra`: `ArtProvider` — baixa capa por Game ID, grava em `ART/` com os
       nomes do OPL; cache (não rebaixa o que já existe); falhas sem crash. Rede
       atrás do Trait `HttpGet` (mock nos testes); `UreqClient` real com
@@ -106,3 +109,4 @@ share.
 | 2026-06-27 | `core`: `GameId` + `parse_boot2_game_id` + parser ISO9660 puro; `infra`: `iso::read_game_id`. core 23 / infra 21 testes verdes | _(pendente)_ |
 | 2026-06-27 | Pesquisa de endpoints: fonte OPLM (archive.org), estrutura `PS2/<id>/<id>_COV.jpg`, sufixos do OPL; `ureq` 3.3.0 confirmado; risco 503 registrado | _(pendente)_ |
 | 2026-06-27 | `infra`: `ArtProvider` (Trait `HttpGet` + mock, `UreqClient` real com retry/backoff 502-504, base URL configurável). infra 27 testes verdes | _(pendente)_ |
+| 2026-06-27 | `core`: `GameMeta` ganha `game_id`/`title`; `derive_title`; cache v2 com `serde(default)` (compat v1). core 29 testes verdes | _(pendente)_ |
