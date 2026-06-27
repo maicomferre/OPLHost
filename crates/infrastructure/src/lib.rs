@@ -6,6 +6,7 @@
 //! `FirewallManager` abre/fecha a porta. Tudo depende do `core`; o `core`
 //! nunca depende daqui.
 
+pub mod art;
 pub mod dialog;
 pub mod firewall;
 pub mod iso;
@@ -17,6 +18,7 @@ pub mod scan;
 pub mod smb_backend;
 pub mod smb_script;
 
+pub use art::{ArtError, ArtProvider, ArtType, FetchOutcome, HttpGet, UreqClient};
 pub use firewall::{FirewallManager, Protocol};
 pub use meta_store::JsonMetaStore;
 pub use privilege::{PkexecEscalator, PrivilegeEscalator};

@@ -7,8 +7,8 @@
 
 - **Status:** Em andamento
 - **Criado em:** 2026-06-27
-- **Última atualização:** 2026-06-27 (Game ID + parser ISO9660 no `core`; leitor
-  de ISO na `infra`; endpoints de art e `ureq` 3.3.0 confirmados por pesquisa)
+- **Última atualização:** 2026-06-27 (`ArtProvider` na `infra`: download de capa
+  por Game ID com `HttpGet`/mock, `UreqClient` real e retry/backoff)
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
@@ -71,8 +71,10 @@ share.
       delegando o parse ao `core`; lê só PVD + raiz + `SYSTEM.CNF`. Testado com
       ISO mínima sintética construída no teste.
 - [ ] `core`/`meta`: enriquecer `GameMeta` com `game_id` e `title`; catálogo rico.
-- [ ] `infra`: `ArtProvider` — baixa capa por Game ID, grava em `ART/` com os
-      nomes do OPL; cache (não rebaixa o que já existe); falhas sem crash.
+- [x] `infra`: `ArtProvider` — baixa capa por Game ID, grava em `ART/` com os
+      nomes do OPL; cache (não rebaixa o que já existe); falhas sem crash. Rede
+      atrás do Trait `HttpGet` (mock nos testes); `UreqClient` real com
+      retry/backoff em 502/503/504; base URL configurável. 6 testes.
 - [ ] `ui`: listagem rica (título/ID/mídia/tamanho + contagem/total) e ação de
       "baixar capas" (na worker thread).
 - [ ] Share: autenticação opcional usuário/senha (`ShareConfig` + `smbpasswd`),
@@ -103,3 +105,4 @@ share.
 | 2026-06-27 | Plano da fase aberto; decisões de Game ID (SYSTEM.CNF) e art (download por ID) registradas | _(pendente)_ |
 | 2026-06-27 | `core`: `GameId` + `parse_boot2_game_id` + parser ISO9660 puro; `infra`: `iso::read_game_id`. core 23 / infra 21 testes verdes | _(pendente)_ |
 | 2026-06-27 | Pesquisa de endpoints: fonte OPLM (archive.org), estrutura `PS2/<id>/<id>_COV.jpg`, sufixos do OPL; `ureq` 3.3.0 confirmado; risco 503 registrado | _(pendente)_ |
+| 2026-06-27 | `infra`: `ArtProvider` (Trait `HttpGet` + mock, `UreqClient` real com retry/backoff 502-504, base URL configurável). infra 27 testes verdes | _(pendente)_ |
