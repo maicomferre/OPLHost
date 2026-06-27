@@ -1,0 +1,6 @@
+# Build artifacts (raiz, workspace e spike)
+/target
+target/
+
+# Arquivos de IDE
+/.idea/
