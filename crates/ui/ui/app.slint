@@ -17,7 +17,9 @@ struct GameRow {
 export component AppWindow inherits Window {
     title: "oplhost — servidor OPL";
     preferred-width: 600px;
-    preferred-height: 720px;
+    preferred-height: 660px;
+    min-width: 520px;
+    min-height: 560px;
 
     in property <string> status-text: "Parado";
     in property <string> ip-text: "—";
@@ -26,6 +28,9 @@ export component AppWindow inherits Window {
     in property <string> message-text: "";
     in-out property <string> dir-path: "";
     in property <bool> busy: false;
+    // Dica contextual sobre o diretório-alvo (estrutura existente, subpasta etc.).
+    in property <string> dir-hint: "A estrutura de pastas do OPL (CD, DVD, ART…) é criada aqui se ainda não existir.";
+    in property <bool> dir-hint-warning: false;
     // Acesso opcional usuário/senha. Guest (acesso livre) é o padrão.
     in-out property <bool> auth-enabled: false;
     in-out property <string> auth-password: "";
@@ -35,6 +40,7 @@ export component AppWindow inherits Window {
     callback stop-clicked();
     callback choose-dir-clicked();
     callback download-art-clicked();
+    callback dir-path-edited();
 
     VerticalBox {
         padding: 16px;
@@ -55,6 +61,7 @@ export component AppWindow inherits Window {
                         placeholder-text: "/caminho/para/o/disco-ou-pasta";
                         text <=> root.dir-path;
                         enabled: !root.busy;
+                        edited => { root.dir-path-edited(); }
                     }
                     Button {
                         text: "Escolher pasta…";
@@ -63,9 +70,10 @@ export component AppWindow inherits Window {
                     }
                 }
                 Text {
-                    text: "A estrutura de pastas do OPL (CD, DVD, ART, …) é criada aqui.";
+                    text: root.dir-hint;
                     font-size: 12px;
-                    color: #888;
+                    wrap: word-wrap;
+                    color: root.dir-hint-warning ? #b58900 : #888;
                 }
             }
         }
@@ -114,6 +122,7 @@ export component AppWindow inherits Window {
 
         GroupBox {
             title: "Catálogo";
+            vertical-stretch: 1;
             VerticalBox {
                 spacing: 6px;
                 Text {
@@ -121,7 +130,8 @@ export component AppWindow inherits Window {
                     font-weight: 600;
                 }
                 ListView {
-                    min-height: 180px;
+                    min-height: 96px;
+                    vertical-stretch: 1;
                     for row[idx] in root.catalog-rows: Rectangle {
                         height: 26px;
                         background: Math.mod(idx, 2) == 0 ? transparent : #00000008;
@@ -159,7 +169,8 @@ export component AppWindow inherits Window {
                 }
                 Button {
                     text: "Baixar capas";
-                    enabled: !root.busy;
+                    // Só faz sentido com catálogo carregado.
+                    enabled: !root.busy && root.catalog-rows.length > 0;
                     clicked => { root.download-art-clicked(); }
                 }
             }

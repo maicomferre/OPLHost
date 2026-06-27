@@ -14,8 +14,8 @@
 use std::path::{Path, PathBuf};
 
 use oplhost_core::{
-    create_opl_layout, summarize, GameMeta, MediaKind, MetaStore, OplMeta, ServerStatus, ShareAuth,
-    ShareConfig, StorageBackend,
+    create_opl_layout, is_opl_subdir_name, summarize, GameMeta, MediaKind, MetaStore, OplMeta,
+    ServerStatus, ShareAuth, ShareConfig, StorageBackend,
 };
 use oplhost_infra::{dialog, iso, net, scan, ArtProvider, JsonMetaStore, RealFs, SmbBackend};
 use slint::{ModelRc, VecModel};
@@ -46,6 +46,8 @@ struct UiUpdate {
     rows: Option<Vec<RowData>>,
     /// Novo caminho do diretório-alvo (preenchido pelo seletor de pasta).
     dir: Option<String>,
+    /// Dica contextual sobre o diretório-alvo (texto, é_alerta).
+    hint: Option<(String, bool)>,
     message: String,
 }
 
@@ -81,6 +83,10 @@ impl UiUpdate {
         if let Some(d) = self.dir {
             ui.set_dir_path(d.into());
         }
+        if let Some((text, warning)) = self.hint {
+            ui.set_dir_hint(text.into());
+            ui.set_dir_hint_warning(warning);
+        }
         ui.set_message_text(self.message.into());
         ui.set_busy(false);
     }
@@ -93,6 +99,7 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_status_text(probe_status_text().into());
     // Usuário do share autenticado = dono da pasta (conta já existente no sistema).
     ui.set_auth_username(current_user().into());
+    apply_dir_hint(&ui);
 
     let weak = ui.as_weak();
     ui.on_start_clicked(move || {
@@ -122,7 +129,72 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // Recalcula a dica de pasta enquanto o usuário digita o caminho à mão.
+    let weak = ui.as_weak();
+    ui.on_dir_path_edited(move || {
+        if let Some(ui) = weak.upgrade() {
+            apply_dir_hint(&ui);
+        }
+    });
+
     ui.run()
+}
+
+/// Recalcula e aplica a dica contextual a partir do caminho atual no campo.
+/// Leituras de `stat` são instantâneas — pode rodar na thread da UI.
+fn apply_dir_hint(ui: &AppWindow) {
+    let path = PathBuf::from(ui.get_dir_path().to_string());
+    let (text, warning) = dir_hint(&path);
+    ui.set_dir_hint(text.into());
+    ui.set_dir_hint_warning(warning);
+}
+
+/// Dica contextual sobre o diretório-alvo escolhido. Retorna `(texto, é_alerta)`.
+///
+/// Cobre três casos do feedback de uso real (§ teste Fase 2):
+/// 1. caminho vazio → instrução padrão;
+/// 2. o usuário apontou uma **subpasta** do OPL (CD/DVD/ART…) em vez da raiz →
+///    **alerta**, sugerindo a pasta-pai;
+/// 3. a pasta já tem estrutura (CD/ ou DVD/) → nada será recriado; senão, a
+///    estrutura será criada ali (só como fallback, não sempre).
+fn dir_hint(path: &Path) -> (String, bool) {
+    if path.as_os_str().is_empty() {
+        return (
+            "A estrutura de pastas do OPL (CD, DVD, ART…) é criada aqui se ainda não existir."
+                .to_string(),
+            false,
+        );
+    }
+
+    if let Some(name) = path.file_name().and_then(|n| n.to_str())
+        && is_opl_subdir_name(name)
+    {
+        let parent = path
+            .parent()
+            .map(|p| p.display().to_string())
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| "a pasta acima".to_string());
+        return (
+            format!(
+                "Você selecionou a subpasta \"{name}\" da estrutura do OPL. \
+                 A raiz do OPL provavelmente é \"{parent}\" — selecione-a."
+            ),
+            true,
+        );
+    }
+
+    if path.join("CD").is_dir() || path.join("DVD").is_dir() {
+        (
+            "Estrutura do OPL detectada nesta pasta — nada será recriado.".to_string(),
+            false,
+        )
+    } else {
+        (
+            "A estrutura de pastas do OPL (CD, DVD, ART…) será criada aqui, pois ainda não existe."
+                .to_string(),
+            false,
+        )
+    }
 }
 
 /// Usuário dono da pasta (vira `force user` no share). O app roda em user-space.
@@ -206,6 +278,7 @@ fn run_choose_dir(start: Option<PathBuf>) -> UiUpdate {
                 dir: Some(path.display().to_string()),
                 rows: Some(rows),
                 summary: Some(summary),
+                hint: Some(dir_hint(&path)),
                 ..Default::default()
             }
         }

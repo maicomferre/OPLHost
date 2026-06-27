@@ -18,6 +18,14 @@ pub fn opl_dir_paths(root: &Path) -> Vec<PathBuf> {
     OPL_DIRS.iter().map(|d| root.join(d)).collect()
 }
 
+/// `true` se `name` é o nome de uma das subpastas que o OPL reconhece na raiz
+/// (CD, DVD, ART…). Comparação case-insensitive. Serve para detectar quando o
+/// usuário escolheu uma **subpasta** da estrutura em vez da **raiz** do OPL — a
+/// raiz é o pai, e é nela que a estrutura (e os jogos) devem viver.
+pub fn is_opl_subdir_name(name: &str) -> bool {
+    OPL_DIRS.iter().any(|d| d.eq_ignore_ascii_case(name))
+}
+
 /// Cria a estrutura de pastas do OPL em `root` usando o port `Fs`.
 /// Idempotente (apoia-se em `create_dir_all`).
 pub fn create_opl_layout(fs: &dyn Fs, root: &Path) -> std::io::Result<()> {
@@ -73,6 +81,17 @@ mod tests {
                 "pasta {dir} deveria ter sido criada"
             );
         }
+    }
+
+    #[test]
+    fn is_opl_subdir_name_reconhece_pastas_do_opl_case_insensitive() {
+        assert!(is_opl_subdir_name("CD"));
+        assert!(is_opl_subdir_name("DVD"));
+        assert!(is_opl_subdir_name("art")); // case-insensitive
+        assert!(is_opl_subdir_name("Pops"));
+        assert!(!is_opl_subdir_name("OPL_BACKUP"));
+        assert!(!is_opl_subdir_name("Jogos"));
+        assert!(!is_opl_subdir_name(""));
     }
 
     #[test]
