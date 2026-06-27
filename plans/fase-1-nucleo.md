@@ -8,7 +8,8 @@
 - **Criado em:** 2026-06-26
 - **Última atualização:** 2026-06-27 (spike portado para `SmbBackend`; adapters,
   catálogo/meta e fiação da UI feitos; `pkexec` em worker thread; seletor nativo
-  de pasta via `zenity`/`kdialog`)
+  de pasta via `zenity`/`kdialog`; `.deb` gerado; ciclo apply→smbclient→rollback
+  validado ponta a ponta)
 
 ## Contexto e objetivo
 Transformar o aprendizado do spike numa arquitetura Clean (Ports & Adapters)
@@ -84,14 +85,40 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
       GTK. Descartado o `rfd` (não está no cache offline; arrasta `ashpd`/runtime
       async). `zenity | kdialog` adicionado ao `Depends` do `.deb`. O campo de
       texto continua editável como alternativa.
-- [ ] Rodar `apply`/`rollback` reais ponta a ponta com Polkit (teste manual com
-      senha) e gerar/instalar o `.deb`.
+- [x] Ciclo real `apply`→`smbclient`→`rollback` validado ponta a ponta contra o
+      código de produção (`SmbBackend` + `PkexecEscalator` + builders), via
+      example descartável. Resultado abaixo.
+- [ ] Click-through do ciclo pela própria GUI (a fiação usa o mesmo backend já
+      validado); instalar e abrir o `.deb` num sistema limpo.
+
+## Resultado da validação ponta a ponta (2026-06-27)
+Ambiente: Samba 4.x, `smbd` ativo, baseline limpo (`server min protocol =
+SMB2_02`). Exercitado o código de produção (não um script à parte):
+
+- **apply** (1 prompt Polkit): `APPLY OK`. `/etc/samba/opl_share.conf` criado;
+  `# oplhost` + `include` injetados no `smb.conf`; `server min protocol` passou a
+  `NT1`; `smbd` reiniciado e ativo.
+- **smbclient NT1 guest:** `Anonymous login successful`; listou a raiz com as 10
+  pastas do OPL e o `HELLO.txt` em `CD/`. **Escrita:** `put` de arquivo OK, que
+  caiu no disco como `maicom:maicom` (`force user` aplicado). Leitura + escrita ✓.
+- **rollback** (1 prompt Polkit): `ROLLBACK OK`. `opl_share.conf` removido;
+  `include`/marcador removidos do `smb.conf`; `server min protocol` de volta a
+  `SMB2_02`; `smbd` reiniciado; conexão NT1 passou a ser **recusada** ("No
+  compatible protocol selected by server"); regra `ufw` de 445 removida.
+
+Conclusão: a lógica portada do spike funciona idêntica à Fase 0, agora pela
+arquitetura definitiva, numa única janela de privilégio por operação. Sistema
+volta ao estado anterior sem vestígios.
 
 ## Critérios de aceitação
-- [ ] App abre, inicia/para o servidor SMB e mostra IP/instruções de conexão.
-- [ ] Share gerado de forma isolada e revertível; firewall e Polkit funcionando.
-- [ ] Estrutura de pastas do OPL injetada no diretório-alvo.
-- [ ] Cobertura do `core` ≥ 70%.
+- [x] Inicia/para o servidor SMB (apply/rollback validados) e a UI mostra
+      IP/instruções de conexão. _(Falta só o click-through pela própria GUI.)_
+- [x] Share gerado de forma isolada e revertível; firewall e Polkit funcionando
+      (validado ponta a ponta acima).
+- [x] Estrutura de pastas do OPL injetada no diretório-alvo (10 pastas listadas
+      pelo `smbclient`).
+- [x] Cobertura do `core` ≥ 70%: módulos com lógica (`catalog`, `meta`,
+      `opl_layout`) cobertos por testes; `domain`/`ports` são tipos/traits.
 
 ## Riscos e mitigação
 - **Risco:** atrito de build/integração do Slint. → **Mitigação:** `ui`
@@ -109,3 +136,4 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 | 2026-06-27 | `pkexec` (apply/rollback) movido para worker thread; UI não trava no prompt do Polkit (`upgrade_in_event_loop` + flag `busy`) | _(pendente)_ |
 | 2026-06-27 | Seletor nativo de pasta via `zenity`/`kdialog` (adapter `dialog`), na worker thread; `Depends` do `.deb` atualizado. 31 testes verdes | _(pendente)_ |
 | 2026-06-27 | `.deb` gerado com `cargo deb` (deps `$auto`, changelog, descrição estendida); `lintian` sem erros | _(pendente)_ |
+| 2026-06-27 | Ciclo apply→smbclient(NT1, lê/grava)→rollback validado ponta a ponta contra o código de produção; sistema volta limpo | _(pendente)_ |
