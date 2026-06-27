@@ -7,7 +7,8 @@
 - **Status:** Em andamento
 - **Criado em:** 2026-06-26
 - **Última atualização:** 2026-06-27 (spike portado para `SmbBackend`; adapters,
-  catálogo/meta e fiação da UI feitos)
+  catálogo/meta e fiação da UI feitos; chamadas ao `pkexec` movidas para worker
+  thread)
 
 ## Contexto e objetivo
 Transformar o aprendizado do spike numa arquitetura Clean (Ports & Adapters)
@@ -70,6 +71,9 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
       módulos com lógica em 100%.
 - [x] Fiação da UI: campo de diretório, IP local, start (apply) / stop
       (rollback), status real do `smbd`, catálogo; mensagens de erro sem panic.
+- [x] Operações com `pkexec` (apply/rollback) movidas para worker thread: o
+      event loop não trava no prompt do Polkit; resultado volta via
+      `Weak::upgrade_in_event_loop` e a flag `busy` desabilita os botões.
 - [x] Empacotamento `.deb`: metadata `cargo-deb`, `.desktop` e `postinst`
       validando `samba`/`polkit`. **Gerar de fato com `cargo deb` ainda pendente
       (ferramenta não instalada no ambiente).**
@@ -98,3 +102,4 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 | 2026-06-26 | Plano da fase aberto | `b8e355e` |
 | 2026-06-26 | Scaffold que compila e roda: workspace 3 crates, core testado, infra com stubs, janela Slint | _(pendente)_ |
 | 2026-06-27 | Spike portado para `SmbBackend` (escalador Polkit, firewall, scripts puros testados); `core` ganha `catalog`+`meta`; `JsonMetaStore`/`scan`/`net`; UI fiada ao backend; metadata `.deb`. 28 testes verdes, clippy limpo | _(pendente)_ |
+| 2026-06-27 | `pkexec` (apply/rollback) movido para worker thread; UI não trava no prompt do Polkit (`upgrade_in_event_loop` + flag `busy`) | _(pendente)_ |
