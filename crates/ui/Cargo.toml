@@ -22,13 +22,21 @@ slint = "1"
 slint-build = "1"
 
 # Empacotamento .deb (V1, §9). Gerar com `cargo deb -p oplhost` (requer o
-# cargo-deb instalado). Runtime-dep: samba (smbd) e polkit (pkexec) — sem elas o
-# app não serve o share nem escala privilégio; libfontconfig1 para o renderer do
-# Slint. O postinst reconfirma e orienta. Build-dep no ambiente: libfontconfig-dev.
+# cargo-deb instalado). `$auto` detecta as libs dinâmicas (libc, libfontconfig do
+# renderer Slint, etc.); somam-se os executáveis de runtime que não são libs
+# linkadas: samba (smbd), pkexec/polkit (escala privilégio) e zenity|kdialog
+# (seletor de pasta). O postinst reconfirma e orienta. Build-dep: libfontconfig-dev.
 [package.metadata.deb]
 section = "utils"
 priority = "optional"
-depends = "samba, policykit-1, libfontconfig1, zenity | kdialog"
+depends = "$auto, samba, pkexec | policykit-1, zenity | kdialog"
+extended-description = """\
+Aplicação gráfica que automatiza a criação e o gerenciamento de um servidor \
+Samba (SMB) dedicado ao Open PS2 Loader (OPL). O OPL só conecta via SMBv1 (NT1), \
+desabilitado por padrão no Samba moderno; o oplhost reabilita esse protocolo num \
+share isolado e revertível, configura o firewall e escala privilégio via Polkit, \
+eliminando a configuração manual no Linux."""
+changelog = "packaging/changelog"
 maintainer-scripts = "packaging/"
 assets = [
     ["target/release/oplhost", "usr/bin/", "755"],

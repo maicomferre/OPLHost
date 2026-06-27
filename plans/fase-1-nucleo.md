@@ -74,9 +74,11 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 - [x] Operações com `pkexec` (apply/rollback) movidas para worker thread: o
       event loop não trava no prompt do Polkit; resultado volta via
       `Weak::upgrade_in_event_loop` e a flag `busy` desabilita os botões.
-- [x] Empacotamento `.deb`: metadata `cargo-deb`, `.desktop` e `postinst`
-      validando `samba`/`polkit`. **Gerar de fato com `cargo deb` ainda pendente
-      (ferramenta não instalada no ambiente).**
+- [x] Empacotamento `.deb` gerado com `cargo deb` (cargo-deb 3.7.0):
+      `oplhost_0.1.0-1_amd64.deb`. Deps via `$auto` (libc6/libfontconfig1) +
+      runtime (`samba`, `pkexec | policykit-1`, `zenity | kdialog`); `.desktop`,
+      `postinst` de validação, changelog e descrição estendida. `lintian` sem
+      erros (só 3 warnings cosméticos: sem manpage/copyright-notice/bug-closes).
 - [x] Seletor nativo de pasta: botão "Escolher pasta…" → adapter `dialog` que
       dispara `zenity` (fallback `kdialog`) numa worker thread, sem build-deps de
       GTK. Descartado o `rfd` (não está no cache offline; arrasta `ashpd`/runtime
@@ -106,3 +108,4 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 | 2026-06-27 | Spike portado para `SmbBackend` (escalador Polkit, firewall, scripts puros testados); `core` ganha `catalog`+`meta`; `JsonMetaStore`/`scan`/`net`; UI fiada ao backend; metadata `.deb`. 28 testes verdes, clippy limpo | _(pendente)_ |
 | 2026-06-27 | `pkexec` (apply/rollback) movido para worker thread; UI não trava no prompt do Polkit (`upgrade_in_event_loop` + flag `busy`) | _(pendente)_ |
 | 2026-06-27 | Seletor nativo de pasta via `zenity`/`kdialog` (adapter `dialog`), na worker thread; `Depends` do `.deb` atualizado. 31 testes verdes | _(pendente)_ |
+| 2026-06-27 | `.deb` gerado com `cargo deb` (deps `$auto`, changelog, descrição estendida); `lintian` sem erros | _(pendente)_ |
