@@ -1,0 +1,60 @@
+# CI do oplhost — workspace Cargo (core / infrastructure / ui-Slint).
+#
+# Gates BLOQUEANTES: fmt, clippy (-D warnings), testes e build do workspace.
+# Validados verdes localmente (rustc 1.95 / rustfmt 1.9, jun/2026) antes de criar
+# este workflow.
+#
+# `cargo fmt --all --check` é bloqueante desde a passada de `cargo fmt` dedicada
+# (commit chore: cargo fmt --all) que deixou o workspace fmt-clean sob o
+# style_edition 2024 do rustfmt 1.9.
+#
+# A ui (Slint) exige libs de sistema no runner Ubuntu para compilar; instaladas
+# abaixo. Nada de display é necessário em build/test (a GUI só sobe em runtime).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    name: build · clippy · testes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependências de sistema do Slint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev
+
+      - name: Toolchain Rust estável (rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache de cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Formatação (cargo fmt --all --check)
+        run: cargo fmt --all --check
+
+      - name: Clippy (-D warnings)
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Testes do workspace
+        run: cargo test --workspace
+
+      - name: Build do workspace (garantia)
+        run: cargo build --workspace
