@@ -14,10 +14,10 @@
 use std::path::{Path, PathBuf};
 
 use oplhost_core::{
-    create_opl_layout, is_opl_subdir_name, summarize, GameMeta, MediaKind, MetaStore, OplMeta,
-    ServerStatus, ShareAuth, ShareConfig, StorageBackend,
+    GameMeta, MediaKind, MetaStore, OplMeta, ServerStatus, ShareAuth, ShareConfig, StorageBackend,
+    create_opl_layout, is_opl_subdir_name, summarize,
 };
-use oplhost_infra::{dialog, iso, net, scan, ArtProvider, JsonMetaStore, RealFs, SmbBackend};
+use oplhost_infra::{ArtProvider, JsonMetaStore, RealFs, SmbBackend, dialog, iso, net, scan};
 use slint::{ModelRc, VecModel};
 
 slint::include_modules!();
@@ -95,7 +95,11 @@ impl UiUpdate {
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
 
-    ui.set_ip_text(net::local_ip().unwrap_or_else(|| "indisponível (offline?)".into()).into());
+    ui.set_ip_text(
+        net::local_ip()
+            .unwrap_or_else(|| "indisponível (offline?)".into())
+            .into(),
+    );
     ui.set_status_text(probe_status_text().into());
     // Usuário do share autenticado = dono da pasta (conta já existente no sistema).
     ui.set_auth_username(current_user().into());
@@ -242,9 +246,11 @@ fn handle_start(ui: &AppWindow) {
         return;
     }
 
-    spawn_job(ui, "Aplicando configuração (informe sua senha no prompt)…", move || {
-        run_start(&target, auth_enabled, password)
-    });
+    spawn_job(
+        ui,
+        "Aplicando configuração (informe sua senha no prompt)…",
+        move || run_start(&target, auth_enabled, password),
+    );
 }
 
 /// "Parar e reverter": rollback completo (remove share + include + firewall) numa
@@ -253,9 +259,11 @@ fn handle_stop(ui: &AppWindow) {
     let target = PathBuf::from(ui.get_dir_path().to_string());
     let auth_enabled = ui.get_auth_enabled();
 
-    spawn_job(ui, "Revertendo configuração (informe sua senha no prompt)…", move || {
-        run_stop(&target, auth_enabled)
-    });
+    spawn_job(
+        ui,
+        "Revertendo configuração (informe sua senha no prompt)…",
+        move || run_stop(&target, auth_enabled),
+    );
 }
 
 /// "Escolher pasta…": abre o seletor nativo (zenity/kdialog) numa worker thread

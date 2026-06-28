@@ -75,7 +75,9 @@ mod tests {
     fn close_fragment_e_tolerante_a_regra_ausente() {
         let frag = FirewallManager.close_fragment(445, Protocol::Tcp);
         assert!(frag.contains("ufw delete allow 445/tcp || true"));
-        assert!(frag.contains("iptables -D INPUT -p tcp --dport 445 -j ACCEPT 2>/dev/null || true"));
+        assert!(
+            frag.contains("iptables -D INPUT -p tcp --dport 445 -j ACCEPT 2>/dev/null || true")
+        );
     }
 
     #[test]

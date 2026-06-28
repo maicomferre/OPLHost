@@ -7,9 +7,11 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use oplhost_core::game_id::parse_boot2_game_id;
-use oplhost_core::iso9660::{find_file, parse_dir_records, parse_root_record, PVD_LBA, SECTOR_SIZE};
 use oplhost_core::GameId;
+use oplhost_core::game_id::parse_boot2_game_id;
+use oplhost_core::iso9660::{
+    PVD_LBA, SECTOR_SIZE, find_file, parse_dir_records, parse_root_record,
+};
 
 /// Lê o Game ID de uma ISO de PS2. `Ok(None)` quando o arquivo não é uma ISO9660
 /// reconhecível ou não tem `SYSTEM.CNF`/`BOOT2` válido — a UI trata como

@@ -12,7 +12,7 @@ use oplhost_core::{BackendError, ServerStatus, ShareConfig, StorageBackend};
 
 use crate::net;
 use crate::privilege::{PkexecEscalator, PrivilegeEscalator};
-use crate::smb_script::{build_apply_script, build_rollback_script, SmbPaths};
+use crate::smb_script::{SmbPaths, build_apply_script, build_rollback_script};
 
 /// Backend Samba, genérico sobre o escalador de privilégio (injetável nos testes).
 #[derive(Clone)]
@@ -174,7 +174,11 @@ mod tests {
         backend.apply_config(&auth).unwrap();
 
         let scripts = backend.escalator.scripts.borrow();
-        assert_eq!(scripts.len(), 1, "auth + share + firewall numa única janela");
+        assert_eq!(
+            scripts.len(),
+            1,
+            "auth + share + firewall numa única janela"
+        );
         let s = &scripts[0];
         assert!(s.contains("smbpasswd -s -a 'maicom'"));
         assert!(s.contains("'s3nha'"));

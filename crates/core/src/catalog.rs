@@ -109,9 +109,9 @@ mod tests {
     #[test]
     fn summarize_conta_e_soma_por_midia() {
         let entries = vec![
-            iso("a.iso", 100 * 1024 * 1024),        // CD
-            iso("b.iso", CD_MAX_BYTES),             // CD (borda)
-            iso("c.iso", 4 * 1024 * 1024 * 1024),   // DVD
+            iso("a.iso", 100 * 1024 * 1024),      // CD
+            iso("b.iso", CD_MAX_BYTES),           // CD (borda)
+            iso("c.iso", 4 * 1024 * 1024 * 1024), // DVD
         ];
         let s = summarize(&entries);
         assert_eq!(s.cd_count, 2);

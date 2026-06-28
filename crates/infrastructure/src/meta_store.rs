@@ -45,8 +45,8 @@ impl MetaStore for JsonMetaStore {
     }
 
     fn save(&self, meta: &OplMeta) -> Result<(), MetaError> {
-        let json = serde_json::to_string_pretty(meta)
-            .map_err(|e| MetaError::Malformed(e.to_string()))?;
+        let json =
+            serde_json::to_string_pretty(meta).map_err(|e| MetaError::Malformed(e.to_string()))?;
         std::fs::write(&self.file_path, json).map_err(|e| MetaError::Io(e.to_string()))
     }
 }
@@ -63,10 +63,7 @@ mod tests {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let mut d = std::env::temp_dir();
-        d.push(format!(
-            "oplhost-metastore-test-{}-{n}",
-            std::process::id()
-        ));
+        d.push(format!("oplhost-metastore-test-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

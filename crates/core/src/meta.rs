@@ -8,8 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::{summarize, CatalogSummary, GameEntry, Media};
-use crate::game_id::{derive_title, GameId};
+use crate::catalog::{CatalogSummary, GameEntry, Media, summarize};
+use crate::game_id::{GameId, derive_title};
 
 /// Versão do schema do `opl_meta.json`. Permite migração futura sem quebrar
 /// arquivos antigos. v2 (Fase 2) acrescentou `game_id` e `title`; os campos têm
@@ -267,6 +267,9 @@ mod tests {
         let voltou: OplMeta = serde_json::from_str(&json).unwrap();
         assert_eq!(meta, voltou);
         assert_eq!(voltou.games[0].title, "Gran Turismo 4");
-        assert_eq!(voltou.games[0].game_id.as_ref().unwrap().as_str(), "SCUS_973.13");
+        assert_eq!(
+            voltou.games[0].game_id.as_ref().unwrap().as_str(),
+            "SCUS_973.13"
+        );
     }
 }

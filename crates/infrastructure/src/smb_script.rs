@@ -265,7 +265,10 @@ mod tests {
         assert!(s.contains("printf '%s\\n%s\\n' 's3nha' 's3nha' | smbpasswd -s -a 'maicom'"));
         let smbpasswd_at = s.find("smbpasswd -s -a").unwrap();
         let restart_at = s.find("systemctl restart smbd").unwrap();
-        assert!(smbpasswd_at < restart_at, "usuário criado antes de reiniciar o smbd");
+        assert!(
+            smbpasswd_at < restart_at,
+            "usuário criado antes de reiniciar o smbd"
+        );
     }
 
     #[test]
@@ -285,7 +288,9 @@ mod tests {
     fn rollback_remove_conf_include_e_marcador() {
         let s = build_rollback_script(&SmbPaths::default(), &cfg());
         assert!(s.contains("rm -f /etc/samba/opl_share.conf"));
-        assert!(s.contains("sed -i '\\#include = /etc/samba/opl_share.conf#d' /etc/samba/smb.conf"));
+        assert!(
+            s.contains("sed -i '\\#include = /etc/samba/opl_share.conf#d' /etc/samba/smb.conf")
+        );
         assert!(s.contains("# oplhost"));
         assert!(s.contains("systemctl restart smbd"));
         assert!(s.contains("ufw delete allow 445/tcp || true"));

@@ -13,9 +13,9 @@ pub mod meta;
 pub mod opl_layout;
 pub mod ports;
 
-pub use catalog::{summarize, CatalogSummary, GameEntry, Media};
+pub use catalog::{CatalogSummary, GameEntry, Media, summarize};
 pub use domain::{BackendError, ServerStatus, ShareAuth, ShareConfig};
-pub use game_id::{derive_title, parse_boot2_game_id, GameId};
+pub use game_id::{GameId, derive_title, parse_boot2_game_id};
 pub use meta::{GameMeta, MediaKind, MetaError, MetaStore, OplMeta};
 pub use opl_layout::{create_opl_layout, is_opl_subdir_name};
 pub use ports::{Fs, StorageBackend};

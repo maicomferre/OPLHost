@@ -32,15 +32,12 @@ impl PrivilegeEscalator for PkexecEscalator {
         fs::write(&path, full)
             .map_err(|e| BackendError::Other(format!("falha ao escrever script root: {e}")))?;
 
-        let status = Command::new("pkexec")
-            .arg("/bin/bash")
-            .arg(&path)
-            .status();
+        let status = Command::new("pkexec").arg("/bin/bash").arg(&path).status();
 
         let _ = fs::remove_file(&path);
 
-        let status = status
-            .map_err(|e| BackendError::Other(format!("falha ao invocar pkexec: {e}")))?;
+        let status =
+            status.map_err(|e| BackendError::Other(format!("falha ao invocar pkexec: {e}")))?;
 
         if status.success() {
             return Ok(());

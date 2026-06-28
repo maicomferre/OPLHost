@@ -170,8 +170,18 @@ mod tests {
     #[test]
     fn find_file_ignora_diretorios_com_mesmo_nome() {
         let records = vec![
-            DirRecord { name: "SYSTEM.CNF".into(), extent_lba: 1, size: 0, is_dir: true },
-            DirRecord { name: "SYSTEM.CNF;1".into(), extent_lba: 2, size: 96, is_dir: false },
+            DirRecord {
+                name: "SYSTEM.CNF".into(),
+                extent_lba: 1,
+                size: 0,
+                is_dir: true,
+            },
+            DirRecord {
+                name: "SYSTEM.CNF;1".into(),
+                extent_lba: 2,
+                size: 96,
+                is_dir: false,
+            },
         ];
         assert_eq!(find_file(&records, "SYSTEM.CNF").unwrap().extent_lba, 2);
     }

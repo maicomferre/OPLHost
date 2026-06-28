@@ -308,14 +308,20 @@ mod tests {
             "https://archive.org/download/OPLM_ART_2023_11/OPLM_ART_2023_11.zip\
              /PS2/SCUS_973.13/SCUS_973.13_COV.jpg"
         );
-        assert_eq!(art_dest_name(&id, ArtType::Cov, "png"), "SCUS_973.13_COV.png");
+        assert_eq!(
+            art_dest_name(&id, ArtType::Cov, "png"),
+            "SCUS_973.13_COV.png"
+        );
     }
 
     #[test]
     fn url_nao_duplica_barra_da_base() {
         let id = gid();
         let with_slash = art_url("http://x/zip/", &id, ArtType::Cov, "jpg");
-        assert_eq!(with_slash, "http://x/zip/PS2/SCUS_973.13/SCUS_973.13_COV.jpg");
+        assert_eq!(
+            with_slash,
+            "http://x/zip/PS2/SCUS_973.13/SCUS_973.13_COV.jpg"
+        );
     }
 
     #[test]
@@ -361,7 +367,10 @@ mod tests {
         assert_eq!(out.skipped, vec!["SCUS_973.13_COV.jpg"]);
         assert!(out.downloaded.is_empty());
         // O arquivo antigo permanece intacto.
-        assert_eq!(std::fs::read(dir.join("SCUS_973.13_COV.jpg")).unwrap(), b"OLD");
+        assert_eq!(
+            std::fs::read(dir.join("SCUS_973.13_COV.jpg")).unwrap(),
+            b"OLD"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -109,7 +109,10 @@ mod tests {
 
     #[test]
     fn parse_normaliza_para_maiusculas() {
-        assert_eq!(GameId::parse("slus_213.86").unwrap().as_str(), "SLUS_213.86");
+        assert_eq!(
+            GameId::parse("slus_213.86").unwrap().as_str(),
+            "SLUS_213.86"
+        );
     }
 
     #[test]
@@ -146,12 +149,21 @@ mod tests {
     #[test]
     fn derive_title_remove_prefixo_de_game_id_e_extensao() {
         assert_eq!(derive_title("SLUS_200.02.God of War.iso"), "God of War");
-        assert_eq!(derive_title("scus_973.13.gran turismo 4.ZSO"), "gran turismo 4");
+        assert_eq!(
+            derive_title("scus_973.13.gran turismo 4.ZSO"),
+            "gran turismo 4"
+        );
     }
 
     #[test]
     fn derive_title_sem_prefixo_usa_nome_sem_extensao() {
-        assert_eq!(derive_title("Shadow of the Colossus.iso"), "Shadow of the Colossus");
-        assert_eq!(derive_title("sem_extensao_conhecida.dat"), "sem_extensao_conhecida.dat");
+        assert_eq!(
+            derive_title("Shadow of the Colossus.iso"),
+            "Shadow of the Colossus"
+        );
+        assert_eq!(
+            derive_title("sem_extensao_conhecida.dat"),
+            "sem_extensao_conhecida.dat"
+        );
     }
 }
