@@ -7,9 +7,11 @@
 
 - **Status:** Em andamento
 - **Criado em:** 2026-06-27
-- **Última atualização:** 2026-06-27 (autenticação opcional usuário/senha:
-  `ShareAuth` no `core`, `valid users`/`smbpasswd` no backend SMB e toggle na UI;
-  conf autenticado validado com `testparm` no ambiente)
+- **Última atualização:** 2026-06-28 (reforma de UX: painel de Configurações
+  separado + controle ÚNICO de servidor "ativar/desativar"; `status` derivado de
+  a config do OPL estar aplicada, não do `smbd` global; `reload` no lugar de
+  `restart`; Trait `StorageBackend` sem `start`/`stop`. Branch
+  `fase-2-settings-toggle-servidor`)
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
@@ -40,6 +42,9 @@ share.
 | 2026-06-27 | Fonte de art = DB OPLM (danielb) no archive.org, baixando arquivo de dentro do zip por Game ID; **base URL configurável** com default no item atual | É a única fonte com extração por arquivo (Kira é `.7z` não extraível); configurável driblando o 503/mirrors | Baixar o zip/7z inteiro (6 GB, inviável por jogo); só pasta local (perde o auto-download) |
 | 2026-06-27 | Auth opcional via `valid users = <user>` + `guest ok = no`; usuário = **dono da pasta** (conta já existente), senha definida por `smbpasswd -s -a` (stdin, nunca argv); guest segue padrão | Não criar contas de sistema (sem `useradd`: menor footprint e risco); reaproveita a conta que já é `force user` | Criar usuário Samba dedicado (exige `useradd`, gestão de conta); senha em argv (vazaria no `ps`) |
 | 2026-06-27 | Senha transitória: fora do `ShareConfig` (que é `Eq`/`Debug`), só em `SmbBackend.auth_password` com `Debug` redigido | Evita vazar a senha em logs/serialização/comparações | Pôr a senha no `ShareConfig` (vazaria em `Debug`/logs) |
+| 2026-06-28 | Modelo "aplicar/remover config + toggle único": UI com um só botão (Ativar/Desativar), `status` = config do OPL aplicada (`opl_share.conf`+include), `reload` no lugar de `restart` | Não parar/reiniciar o `smbd` global quebra outros usos do Samba e viola o isolamento (§0); um só botão é coerente com o status real | Manter os dois botões + start/stop global (conflitante e invasivo) |
+| 2026-06-28 | **Trait `StorageBackend` sem `start`/`stop`** (só `apply_config`/`status`/`rollback`) — **diverge da lista de §3 do CLAUDE.md de propósito** | `start`/`stop` faziam `systemctl start/stop smbd` global (anti-padrão); controle de ciclo de vida de processo só faz sentido no futuro `UdpbdBackend`, quando a abstração será revisitada com os dois casos concretos (§7.1) | Manter `start`/`stop` (código morto que viola o isolamento) |
+| 2026-06-28 | Painel de Configurações separado (gear no topo) movendo "Acesso ao share" para fora da tela principal | Opções inline empurravam o catálogo para fora da área visível; separar configuração de operação (feedback de uso real) | Manter o bloco inline (cresce a tela, compete com o catálogo) |
 
 ## A validar no ambiente
 - [x] **Crate HTTP:** `ureq` **3.3.0** (mar/2026) — síncrono/bloqueante, TLS via
@@ -67,6 +72,17 @@ share.
       retorna **503 intermitente** (serviço pesado/rate-limited). A *listagem* do
       zip funciona. → `ArtProvider` com retry/backoff, falha graciosa e **base URL
       configurável** (mirror ou backup local descompactado servido por estático).
+- [ ] **`systemctl reload smbd` (não `restart`)** — apply/rollback passaram a
+      recarregar o daemon (decisão 2026-06-28). **Validar no ambiente:** (a) que o
+      reload aplica um share novo sem precisar de restart na versão de Samba alvo,
+      inclusive mudanças no bloco `[global]` (NT1); (b) o comportamento quando o
+      `smbd` está **parado** — o app não controla o ciclo de vida do daemon global,
+      então o reload pressupõe o Samba já habilitado pelo sistema. Reavaliar se
+      algum cenário exigir garantir o daemon ativo sem um "start" invasivo.
+- [ ] **Status derivado da config** — `status()` agora lê `opl_share.conf` +
+      `include` (sem root, arquivos world-readable). Confirmar que o
+      `opl_share.conf` criado sob `pkexec` fica legível (0644) para o usuário ler o
+      status sem privilégio.
 
 ## Tarefas
 - [x] `core`: tipo `GameId` (normalização/validação do formato `LLLL_NNN.NN`) e
@@ -135,3 +151,5 @@ share.
 | 2026-06-27 | Auth opcional usuário/senha: `core` `ShareAuth`; `infra` `valid users`/`smbpasswd` (stdin, escapado) + `smbpasswd -x` no rollback + `Debug` redigido; `ui` toggle/senha/aviso. Conf autenticado validado com `testparm`. core 29 / infra 36 testes verdes | _(pendente)_ |
 | 2026-06-27 | Roteiro de teste manual do share (guest+autenticado, cliente+OPL) em `plans/roteiro-teste-manual-share.md` | _(pendente)_ |
 | 2026-06-27 | Feedback de uso real → ajustes de UX: "Baixar capas" só com catálogo; janela cabe sem corte (lista absorve o espaço); dica de pasta condicional + detecção de subpasta (`is_opl_subdir_name` no core). Decisão registrada (memória): controle do servidor vai virar "aplicar/remover config + toggle" (não mexer no smbd global) — a implementar. core 30 testes verdes | _(pendente)_ |
+| 2026-06-28 | Reforma Settings + toggle único: painel de Configurações em Slint (move "Acesso ao share" da tela principal); botão único Ativar/Desativar; `status` derivado de `opl_share.conf`+include; `reload` no lugar de `restart`; Trait `StorageBackend` sem `start`/`stop` (diverge de §3 do CLAUDE.md — anotado). core 30 / infra 36 testes verdes; clippy `-D warnings` limpo | _(pendente)_ |
+| 2026-06-28 | CI do GitHub Actions (branch `ci-github-actions`): build/clippy/test bloqueantes, `fmt` não-bloqueante (repo ainda não fmt-clean sob style_edition 2024 do rustfmt 1.9 — passada de `cargo fmt` dedicada fica como pendência) | _(pendente)_ |

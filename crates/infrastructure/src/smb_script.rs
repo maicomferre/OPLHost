@@ -127,9 +127,17 @@ fn build_auth_fragment(cfg: &ShareConfig, password: Option<&str>) -> String {
 }
 
 /// Corpo do script root de APPLY: grava o conf isolado, injeta o include de
-/// forma idempotente, (opcionalmente) cria o usuário Samba, reinicia o `smbd` e
-/// abre a porta no firewall. Tudo numa única janela de privilégio quando
-/// entregue ao `PrivilegeEscalator`. `password` só é usado no modo autenticado.
+/// forma idempotente, (opcionalmente) cria o usuário Samba, **recarrega** o
+/// `smbd` e abre a porta no firewall. Tudo numa única janela de privilégio
+/// quando entregue ao `PrivilegeEscalator`. `password` só é usado no modo
+/// autenticado.
+///
+/// Usa `systemctl reload smbd` (não `restart`): recarregar aplica o novo share
+/// sem derrubar conexões nem interromper outros usos do Samba na máquina (§0;
+/// decisão 2026-06-27). Pressupõe que o `smbd` já é gerenciado pelo sistema — o
+/// app não controla o ciclo de vida do daemon global. **A validar no ambiente:**
+/// se mudanças no bloco `[global]` (protocolo NT1) exigirem mais que um reload
+/// em alguma versão do Samba, reavaliar.
 pub fn build_apply_script(paths: &SmbPaths, cfg: &ShareConfig, password: Option<&str>) -> String {
     let conf = build_smb_conf(cfg);
     let include = paths.include_line();
@@ -146,15 +154,15 @@ pub fn build_apply_script(paths: &SmbPaths, cfg: &ShareConfig, password: Option<
          fi\n\
          \n\
          {auth}\
-         systemctl restart smbd\n\
+         systemctl reload smbd\n\
          \n\
          {firewall}\n"
     )
 }
 
 /// Corpo do script root de ROLLBACK: remove o conf isolado, tira a linha de
-/// include e o marcador, reinicia o `smbd` e fecha a porta. Rollback completo
-/// (§0): o sistema volta ao estado anterior sem vestígios do app.
+/// include e o marcador, **recarrega** o `smbd` e fecha a porta. Rollback
+/// completo (§0): o sistema volta ao estado anterior sem vestígios do app.
 pub fn build_rollback_script(paths: &SmbPaths, cfg: &ShareConfig) -> String {
     let include = paths.include_line();
     let firewall = FirewallManager.close_fragment(cfg.port, Protocol::Tcp);
@@ -172,7 +180,7 @@ pub fn build_rollback_script(paths: &SmbPaths, cfg: &ShareConfig) -> String {
          sed -i '\\#{include}#d' {smb_conf}\n\
          sed -i '/{MARKER}/d' {smb_conf}\n\
          {deauth}\
-         systemctl restart smbd\n\
+         systemctl reload smbd\n\
          \n\
          {firewall}\n"
     )
@@ -239,13 +247,15 @@ mod tests {
     }
 
     #[test]
-    fn apply_injeta_include_idempotente_e_reinicia_smbd() {
+    fn apply_injeta_include_idempotente_e_recarrega_smbd() {
         let s = build_apply_script(&SmbPaths::default(), &cfg(), None);
         // heredoc grava o conf isolado
         assert!(s.contains("cat > /etc/samba/opl_share.conf <<'OPLEOF'"));
         // include idempotente: só anexa se ainda não existe
         assert!(s.contains("grep -qxF 'include = /etc/samba/opl_share.conf' /etc/samba/smb.conf"));
-        assert!(s.contains("systemctl restart smbd"));
+        // reload (não restart): não derruba conexões nem outros usos do Samba
+        assert!(s.contains("systemctl reload smbd"));
+        assert!(!s.contains("systemctl restart smbd"));
         // firewall na mesma janela
         assert!(s.contains("ufw allow 445/tcp"));
     }
@@ -264,10 +274,10 @@ mod tests {
         // senha vai pelo stdin (não em argv) e antes do restart
         assert!(s.contains("printf '%s\\n%s\\n' 's3nha' 's3nha' | smbpasswd -s -a 'maicom'"));
         let smbpasswd_at = s.find("smbpasswd -s -a").unwrap();
-        let restart_at = s.find("systemctl restart smbd").unwrap();
+        let reload_at = s.find("systemctl reload smbd").unwrap();
         assert!(
-            smbpasswd_at < restart_at,
-            "usuário criado antes de reiniciar o smbd"
+            smbpasswd_at < reload_at,
+            "usuário criado antes de recarregar o smbd"
         );
     }
 
@@ -292,7 +302,7 @@ mod tests {
             s.contains("sed -i '\\#include = /etc/samba/opl_share.conf#d' /etc/samba/smb.conf")
         );
         assert!(s.contains("# oplhost"));
-        assert!(s.contains("systemctl restart smbd"));
+        assert!(s.contains("systemctl reload smbd"));
         assert!(s.contains("ufw delete allow 445/tcp || true"));
         // modo guest não mexe em conta Samba
         assert!(!s.contains("smbpasswd"));

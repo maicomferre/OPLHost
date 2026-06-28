@@ -1,10 +1,15 @@
 //! `SmbBackend` — implementação de `StorageBackend` para Samba (SMBv1/NT1).
 //!
 //! Porta a lógica validada na Fase 0 (ver `plans/fase-0-spike.md`): gera o
-//! `opl_share.conf` isolado, injeta o `include` idempotente, reinicia o `smbd` e
-//! abre a porta 445 — tudo numa ÚNICA janela de privilégio via o
+//! `opl_share.conf` isolado, injeta o `include` idempotente, **recarrega** o
+//! `smbd` e abre a porta 445 — tudo numa ÚNICA janela de privilégio via o
 //! `PrivilegeEscalator`. O rollback desfaz tudo (§0). A montagem dos scripts é
 //! pura (`smb_script`); aqui só compomos e delegamos.
+//!
+//! Modelo "aplicar/remover config" (decisão 2026-06-27): o backend NÃO faz
+//! start/stop do daemon global (quebraria outros usos do Samba). O `status` é
+//! derivado de a config do OPL estar aplicada — o `opl_share.conf` existir E o
+//! `include` estar no `smb.conf` — não do estado do `smbd` do sistema.
 
 use std::process::Command;
 
@@ -72,12 +77,29 @@ impl<E: PrivilegeEscalator> SmbBackend<E> {
         self
     }
 
-    /// Consulta `systemctl is-active smbd` (leitura, não precisa de root).
+    /// Consulta `systemctl is-active smbd` (leitura, não precisa de root). Usado
+    /// só na heurística de "porta ocupada por outro serviço" no `apply_config`.
     fn smbd_active(&self) -> bool {
         Command::new("systemctl")
             .args(["is-active", "smbd"])
             .output()
             .map(|o| o.stdout.starts_with(b"active"))
+            .unwrap_or(false)
+    }
+
+    /// A config do OPL está aplicada? Verdadeiro quando o `opl_share.conf`
+    /// isolado existe E a linha de `include` está no `smb.conf`. Base do
+    /// `status` (decisão 2026-06-27): reflete "o share do OPL está servindo?",
+    /// não o estado do daemon global. Leitura pura de arquivos — sem root: o
+    /// `smb.conf` é world-readable e o `opl_share.conf` é criado com 0644.
+    fn config_applied(&self) -> bool {
+        let conf_exists = std::path::Path::new(&self.paths.share_conf).is_file();
+        if !conf_exists {
+            return false;
+        }
+        let include = self.paths.include_line();
+        std::fs::read_to_string(&self.paths.smb_conf)
+            .map(|content| content.lines().any(|line| line.trim() == include))
             .unwrap_or(false)
     }
 }
@@ -92,16 +114,10 @@ impl<E: PrivilegeEscalator> StorageBackend for SmbBackend<E> {
         self.escalator.run_root_script(&script)
     }
 
-    fn start(&self) -> Result<(), BackendError> {
-        self.escalator.run_root_script("systemctl start smbd")
-    }
-
-    fn stop(&self) -> Result<(), BackendError> {
-        self.escalator.run_root_script("systemctl stop smbd")
-    }
-
     fn status(&self) -> Result<ServerStatus, BackendError> {
-        if self.smbd_active() {
+        // "Ativo" = a config do OPL está aplicada (share isolado + include),
+        // não o estado do smbd global (decisão 2026-06-27).
+        if self.config_applied() {
             Ok(ServerStatus::Running)
         } else {
             Ok(ServerStatus::Stopped)
@@ -155,7 +171,7 @@ mod tests {
         assert_eq!(scripts.len(), 1, "tudo numa única janela de privilégio");
         let s = &scripts[0];
         assert!(s.contains("opl_share.conf"));
-        assert!(s.contains("systemctl restart smbd"));
+        assert!(s.contains("systemctl reload smbd"));
         assert!(s.contains("ufw allow 445/tcp"));
     }
 
@@ -209,15 +225,37 @@ mod tests {
     }
 
     #[test]
-    fn start_e_stop_usam_systemctl_via_escalador() {
-        let esc = RecordingEscalator::default();
-        let backend = SmbBackend::with_parts(cfg(), SmbPaths::default(), esc);
+    fn status_deriva_da_config_aplicada_nao_do_smbd() {
+        // Paths temporários isolados: o status lê estes arquivos, não o daemon.
+        let dir = std::env::temp_dir().join(format!(
+            "oplhost-status-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let share_conf = dir.join("opl_share.conf");
+        let smb_conf = dir.join("smb.conf");
+        let paths = SmbPaths {
+            share_conf: share_conf.to_string_lossy().into_owned(),
+            smb_conf: smb_conf.to_string_lossy().into_owned(),
+        };
+        let backend = SmbBackend::with_parts(cfg(), paths.clone(), RecordingEscalator::default());
 
-        backend.start().unwrap();
-        backend.stop().unwrap();
+        // 1) nada aplicado → Stopped
+        std::fs::write(&smb_conf, "[global]\n").unwrap();
+        assert_eq!(backend.status().unwrap(), ServerStatus::Stopped);
 
-        let scripts = backend.escalator.scripts.borrow();
-        assert_eq!(scripts[0], "systemctl start smbd");
-        assert_eq!(scripts[1], "systemctl stop smbd");
+        // 2) conf existe mas o include não está no smb.conf → ainda Stopped
+        std::fs::write(&share_conf, "x").unwrap();
+        assert_eq!(backend.status().unwrap(), ServerStatus::Stopped);
+
+        // 3) conf + include presentes → Running (config aplicada/servindo)
+        std::fs::write(&smb_conf, format!("[global]\n{}\n", paths.include_line())).unwrap();
+        assert_eq!(backend.status().unwrap(), ServerStatus::Running);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

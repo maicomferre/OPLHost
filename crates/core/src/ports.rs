@@ -15,18 +15,23 @@ pub trait Fs {
 
 /// Port do servidor de storage do OPL. **Genérico, não casado com SMB.**
 ///
-/// Primeira implementação: `SmbBackend`. Um futuro `UdpbdBackend` (§7.1) deve
-/// caber neste mesmo contrato sem refatoração dolorosa — por isso as operações
-/// são descritas em termos de "aplicar config / iniciar / parar / status /
-/// reverter", e não em termos de `smb.conf`.
+/// Modelo "**aplicar/remover configuração**": o backend gerencia só a config
+/// que faz o catálogo do OPL ser servido (no SMB: o share isolado + include +
+/// firewall, com um *reload* do daemon), sem controlar o ciclo de vida de um
+/// daemon do sistema que pode atender a outros usos. Por isso o contrato é
+/// `apply_config` / `status` / `rollback` — não há `start`/`stop` de processo.
+///
+/// **Decisão (2026-06-27):** as operações antigas `start`/`stop` (que faziam
+/// `systemctl start/stop smbd` no daemon global) foram removidas — paravam o
+/// Samba do sistema inteiro, violando o isolamento (§0). Controle de ciclo de
+/// vida de um **processo dedicado** só fará sentido no futuro `UdpbdBackend`
+/// (§7.1), que supervisiona seu próprio servidor; a abstração será revisitada
+/// ali, com os dois casos concretos na mão (CLAUDE.md §7.1). Até lá, este Trait
+/// diverge da lista de §3 do CLAUDE.md de propósito — ver `plans/`.
 pub trait StorageBackend {
     /// Gera/aplica a configuração necessária para servir o diretório-alvo.
     fn apply_config(&self, cfg: &ShareConfig) -> Result<(), BackendError>;
-    /// Inicia o serviço.
-    fn start(&self) -> Result<(), BackendError>;
-    /// Para o serviço.
-    fn stop(&self) -> Result<(), BackendError>;
-    /// Estado atual do serviço.
+    /// Estado atual: a configuração do OPL está aplicada (servindo) ou não.
     fn status(&self) -> Result<ServerStatus, BackendError>;
     /// Desfaz toda a configuração aplicada (rollback completo).
     fn rollback(&self) -> Result<(), BackendError>;

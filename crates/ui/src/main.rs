@@ -40,6 +40,8 @@ struct RowData {
 #[derive(Default)]
 struct UiUpdate {
     status: Option<String>,
+    /// Novo estado do servidor (config aplicada?) para o botão de toggle refletir.
+    active: Option<bool>,
     /// Linha-resumo do catálogo (contagem/tamanho).
     summary: Option<String>,
     /// Linhas do catálogo rico (título/ID/mídia/tamanho).
@@ -64,6 +66,9 @@ impl UiUpdate {
     fn apply_to(self, ui: &AppWindow) {
         if let Some(s) = self.status {
             ui.set_status_text(s.into());
+        }
+        if let Some(a) = self.active {
+            ui.set_server_active(a);
         }
         if let Some(summary) = self.summary {
             ui.set_catalog_summary(summary.into());
@@ -100,22 +105,19 @@ fn main() -> Result<(), slint::PlatformError> {
             .unwrap_or_else(|| "indisponível (offline?)".into())
             .into(),
     );
-    ui.set_status_text(probe_status_text().into());
+    let (status, active) = current_status();
+    ui.set_status_text(status.into());
+    ui.set_server_active(active);
     // Usuário do share autenticado = dono da pasta (conta já existente no sistema).
     ui.set_auth_username(current_user().into());
     apply_dir_hint(&ui);
 
+    // Controle único do servidor: o mesmo botão ativa (apply) ou desativa
+    // (rollback) conforme o estado real, evitando os dois botões conflitantes.
     let weak = ui.as_weak();
-    ui.on_start_clicked(move || {
+    ui.on_toggle_server_clicked(move || {
         if let Some(ui) = weak.upgrade() {
-            handle_start(&ui);
-        }
-    });
-
-    let weak = ui.as_weak();
-    ui.on_stop_clicked(move || {
-        if let Some(ui) = weak.upgrade() {
-            handle_stop(&ui);
+            handle_toggle_server(&ui);
         }
     });
 
@@ -228,12 +230,24 @@ fn auth_mode(enabled: bool) -> ShareAuth {
     }
 }
 
-/// "Iniciar": valida a entrada na thread da UI, marca `busy` e dispara o trabalho
-/// bloqueante (Polkit) numa worker thread. Erros viram mensagem — nunca panic (§8).
-fn handle_start(ui: &AppWindow) {
+/// Toggle único do servidor: desativa (rollback) quando a config está aplicada,
+/// ativa (apply) quando não está. O estado real vem de `server_active`, coerente
+/// com o status exibido — um só botão, sem os dois conflitantes de antes.
+fn handle_toggle_server(ui: &AppWindow) {
+    if ui.get_server_active() {
+        handle_deactivate(ui);
+    } else {
+        handle_activate(ui);
+    }
+}
+
+/// "Ativar servidor": valida a entrada na thread da UI, marca `busy` e dispara o
+/// trabalho bloqueante (Polkit) numa worker thread. Erros viram mensagem — nunca
+/// panic (§8).
+fn handle_activate(ui: &AppWindow) {
     let target = PathBuf::from(ui.get_dir_path().to_string().trim());
     if target.as_os_str().is_empty() {
-        ui.set_message_text("Escolha um diretório-alvo antes de iniciar.".into());
+        ui.set_message_text("Escolha um diretório-alvo antes de ativar.".into());
         return;
     }
 
@@ -249,20 +263,21 @@ fn handle_start(ui: &AppWindow) {
     spawn_job(
         ui,
         "Aplicando configuração (informe sua senha no prompt)…",
-        move || run_start(&target, auth_enabled, password),
+        move || run_activate(&target, auth_enabled, password),
     );
 }
 
-/// "Parar e reverter": rollback completo (remove share + include + firewall) numa
-/// única janela Polkit, fora da thread da UI. Volta o sistema ao estado anterior (§0).
-fn handle_stop(ui: &AppWindow) {
+/// "Desativar e reverter": rollback completo (remove share + include + firewall)
+/// numa única janela Polkit, fora da thread da UI. Volta o sistema ao estado
+/// anterior (§0).
+fn handle_deactivate(ui: &AppWindow) {
     let target = PathBuf::from(ui.get_dir_path().to_string());
     let auth_enabled = ui.get_auth_enabled();
 
     spawn_job(
         ui,
         "Revertendo configuração (informe sua senha no prompt)…",
-        move || run_stop(&target, auth_enabled),
+        move || run_deactivate(&target, auth_enabled),
     );
 }
 
@@ -342,7 +357,7 @@ fn run_download_art(target: &Path) -> UiUpdate {
 
 /// Marca `busy`, exibe a mensagem de progresso e roda `job` numa worker thread,
 /// devolvendo o `UiUpdate` para o event loop quando terminar. Centraliza o padrão
-/// de threading para que `handle_start`/`handle_stop` fiquem declarativos.
+/// de threading para que `handle_activate`/`handle_deactivate` fiquem declarativos.
 fn spawn_job<F>(ui: &AppWindow, progress: &str, job: F)
 where
     F: FnOnce() -> UiUpdate + Send + 'static,
@@ -358,10 +373,10 @@ where
     });
 }
 
-/// Trabalho de "Iniciar" (worker thread): cria a estrutura do OPL e aplica o
+/// Trabalho de "Ativar" (worker thread): cria a estrutura do OPL e aplica o
 /// share SMBv1. `create_opl_layout` é user-space; `apply_config` abre a janela
 /// Polkit. Retorna o que a UI deve mostrar.
-fn run_start(target: &Path, auth_enabled: bool, password: String) -> UiUpdate {
+fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUpdate {
     if let Err(e) = create_opl_layout(&RealFs, target) {
         return UiUpdate::message(format!(
             "Falha ao criar a estrutura em {}: {e}",
@@ -374,40 +389,50 @@ fn run_start(target: &Path, auth_enabled: bool, password: String) -> UiUpdate {
     let backend = SmbBackend::new(cfg.clone()).with_auth_password(pw);
     match backend.apply_config(&cfg) {
         Ok(()) => {
+            let (status, active) = current_status();
             let (rows, summary) = build_catalog(target);
             UiUpdate {
-                status: Some(probe_status_text()),
+                status: Some(status),
+                active: Some(active),
                 rows: Some(rows),
                 summary: Some(summary),
                 ..Default::default()
             }
         }
-        Err(e) => UiUpdate::message(format!("Não foi possível iniciar: {e}")),
+        Err(e) => UiUpdate::message(format!("Não foi possível ativar: {e}")),
     }
 }
 
-/// Trabalho de "Parar" (worker thread): rollback completo via Polkit.
-fn run_stop(target: &Path, auth_enabled: bool) -> UiUpdate {
+/// Trabalho de "Desativar" (worker thread): rollback completo via Polkit.
+fn run_deactivate(target: &Path, auth_enabled: bool) -> UiUpdate {
     let backend = SmbBackend::new(share_config(target, auth_mode(auth_enabled)));
     match backend.rollback() {
-        Ok(()) => UiUpdate {
-            status: Some(probe_status_text()),
-            message: "Configuração revertida. Nada do app permanece no sistema.".to_string(),
-            ..Default::default()
-        },
+        Ok(()) => {
+            let (status, active) = current_status();
+            UiUpdate {
+                status: Some(status),
+                active: Some(active),
+                message: "Configuração revertida. Nada do app permanece no sistema.".to_string(),
+                ..Default::default()
+            }
+        }
         Err(e) => UiUpdate::message(format!("Falha ao reverter: {e}")),
     }
 }
 
-/// Estado real do `smbd` como texto para a UI. Sem root (`systemctl is-active`).
-fn probe_status_text() -> String {
+/// Estado atual do servidor para a UI: `(texto, ativo)`. "Ativo" = a config do
+/// OPL está aplicada (share isolado + include), derivado do backend — não do
+/// daemon global (decisão 2026-06-27). Sem root (leitura de arquivos).
+fn current_status() -> (String, bool) {
     let backend = SmbBackend::new(share_config(Path::new("/"), ShareAuth::Guest));
-    match backend.status() {
-        Ok(ServerStatus::Running) => "Rodando",
-        Ok(ServerStatus::Stopped) => "Parado",
-        Ok(ServerStatus::Error(_)) | Err(_) => "Indeterminado",
+    let active = matches!(backend.status(), Ok(ServerStatus::Running));
+    let text = if active {
+        "Ativo — compartilhando o catálogo do OPL"
+    } else {
+        "Inativo — configuração não aplicada"
     }
-    .to_string()
+    .to_string();
+    (text, active)
 }
 
 /// Lê as ISOs do alvo, extrai o Game ID de cada uma, atualiza o cache

@@ -3,9 +3,17 @@
 use std::path::PathBuf;
 
 /// Estado observável do servidor de storage (qualquer backend).
+///
+/// O significado é "**o catálogo do OPL está sendo servido?**", derivado do que
+/// cada backend considera "config aplicada" — não do estado de um daemon global.
+/// No `SmbBackend`, `Running` = o share isolado existe e está incluído no Samba;
+/// `Stopped` = config ausente. Um futuro `UdpbdBackend` mapeará para o seu
+/// próprio processo. A UI traduz para "Ativo/Inativo".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerStatus {
+    /// Config aplicada — o catálogo do OPL está sendo servido.
     Running,
+    /// Config ausente — nada sendo servido pelo app.
     Stopped,
     /// Estado de falha com mensagem orientando a resolução (UX §8 do CLAUDE.md).
     Error(String),
