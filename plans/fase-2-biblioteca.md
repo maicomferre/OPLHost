@@ -11,7 +11,8 @@
   separado + controle ÚNICO de servidor "ativar/desativar"; `status` derivado de
   a config do OPL estar aplicada, não do `smbd` global; `reload` no lugar de
   `restart`; Trait `StorageBackend` sem `start`/`stop`. Branch
-  `fase-2-settings-toggle-servidor`)
+  `fase-2-settings-toggle-servidor`. Depois: passada de `cargo fmt --all`
+  dedicada + CI com `fmt` bloqueante — ver "Encadeamento de branches")
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
@@ -138,6 +139,27 @@ share.
 - **Risco:** parser ISO9660 caseiro com bugs sutis. → **Mitigação:** parsers
   puros no `core` com testes de bytes sintéticos + validação com ISO real.
 
+## Encadeamento de branches (pendente de revisão/merge)
+Três branches locais, **todas partindo de `fase-2-biblioteca`** e convergindo
+sobre a passada de `cargo fmt` — sem conflitos entre si. Commits **assinados
+(GPG)**; nada de push/PR/merge; `main` intacta.
+
+| Branch | Topo | Conteúdo | Base |
+|--------|------|----------|------|
+| `chore-cargo-fmt` | `63bbee0` | `cargo fmt --all` puro do workspace (14 arquivos, só formatação) — deixa a base fmt-clean sob style_edition 2024 | `fase-2-biblioteca` |
+| `fase-2-settings-toggle-servidor` | `ef21649` | painel de Configurações + toggle único + `status` por config + `reload` + Trait sem `start`/`stop` | `chore-cargo-fmt` (rebaseada) |
+| `ci-github-actions` | `9dd099f` | GitHub Actions: `fmt`/clippy/test/build **todos bloqueantes** (`continue-on-error` removido) | `chore-cargo-fmt` (rebaseada) |
+
+- **Rebase sem dor:** `fase-2-settings-toggle-servidor` foi rebaseada com
+  `-X theirs` (mantém a lógica da feature nos conflitos de formatação) e em
+  seguida `cargo fmt --all` normalizou — resultado determinístico, validado por
+  build/clippy/66 testes verdes. `ci-github-actions` rebaseou limpa (só toca
+  `.github/`).
+- **Ordem de merge sugerida:** `chore-cargo-fmt` → `fase-2-settings-toggle-servidor`
+  (fast-forward, já contém o fmt) → `ci-github-actions`. Ao subir, o Actions já
+  roda com o gate de `fmt` bloqueante porque a base ficou fmt-clean.
+- **Pontas pré-rebase** preservadas no reflog: settings `a9c9e08`, CI `d519309`.
+
 ## Histórico
 | Data | Mudança | Commit |
 |------|---------|--------|
@@ -153,3 +175,5 @@ share.
 | 2026-06-27 | Feedback de uso real → ajustes de UX: "Baixar capas" só com catálogo; janela cabe sem corte (lista absorve o espaço); dica de pasta condicional + detecção de subpasta (`is_opl_subdir_name` no core). Decisão registrada (memória): controle do servidor vai virar "aplicar/remover config + toggle" (não mexer no smbd global) — a implementar. core 30 testes verdes | _(pendente)_ |
 | 2026-06-28 | Reforma Settings + toggle único: painel de Configurações em Slint (move "Acesso ao share" da tela principal); botão único Ativar/Desativar; `status` derivado de `opl_share.conf`+include; `reload` no lugar de `restart`; Trait `StorageBackend` sem `start`/`stop` (diverge de §3 do CLAUDE.md — anotado). core 30 / infra 36 testes verdes; clippy `-D warnings` limpo | _(pendente)_ |
 | 2026-06-28 | CI do GitHub Actions (branch `ci-github-actions`): build/clippy/test bloqueantes, `fmt` não-bloqueante (repo ainda não fmt-clean sob style_edition 2024 do rustfmt 1.9 — passada de `cargo fmt` dedicada fica como pendência) | _(pendente)_ |
+| 2026-06-28 | Passada de `cargo fmt --all` dedicada (branch `chore-cargo-fmt`, sobre `fase-2-biblioteca`): 14 arquivos reformatados, só formatação; workspace fmt-clean; 66 testes verdes | `63bbee0` |
+| 2026-06-28 | Encadeamento: `fase-2-settings-toggle-servidor` e `ci-github-actions` rebaseadas sobre `chore-cargo-fmt`; gate `fmt` do CI virou bloqueante (`continue-on-error` removido). build/clippy/66 testes verdes; tree fmt-clean | settings `ef21649`, CI `9dd099f` |
