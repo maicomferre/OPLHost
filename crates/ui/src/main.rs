@@ -14,14 +14,15 @@
 use std::path::{Path, PathBuf};
 
 use oplhost_core::{
-    AppSettings, GameMeta, MediaKind, MetaStore, OplMeta, SETTINGS_VERSION, ServerStatus,
-    SettingsStore, ShareAuth, ShareConfig, StorageBackend, create_opl_layout, is_opl_subdir_name,
-    summarize,
+    AppSettings, GameId, GameInfo, GameInfoStore, GameMeta, MediaKind, MetaStore, OplMeta,
+    SETTINGS_VERSION, ServerStatus, SettingsStore, ShareAuth, ShareConfig, StorageBackend,
+    create_opl_layout, derive_title, is_opl_subdir_name, summarize,
 };
 use oplhost_infra::{
-    ArtProvider, FsSettingsStore, JsonMetaStore, RealFs, SmbBackend, dialog, iso, net, scan,
+    ArtProvider, FsGameInfoStore, FsSettingsStore, JsonMetaStore, RealFs, SmbBackend, dialog, iso,
+    net, scan,
 };
-use slint::{ModelRc, VecModel};
+use slint::{Model, ModelRc, VecModel};
 
 slint::include_modules!();
 
@@ -36,6 +37,9 @@ struct RowData {
     game_id: String,
     media: String,
     size: String,
+    /// Nome do arquivo cru da ISO — exibido no editor de metadados (o `title`
+    /// pode ser derivado/sobrescrito).
+    file_name: String,
 }
 
 /// Atualizações de tela produzidas por uma operação na worker thread e aplicadas
@@ -84,6 +88,7 @@ impl UiUpdate {
                     game_id: r.game_id.into(),
                     media: r.media.into(),
                     size: r.size.into(),
+                    file_name: r.file_name.into(),
                 })
                 .collect();
             ui.set_catalog_rows(ModelRc::new(VecModel::from(model)));
@@ -169,6 +174,22 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.on_dir_path_edited(move || {
         if let Some(ui) = weak.upgrade() {
             apply_dir_hint(&ui);
+        }
+    });
+
+    // Clique numa linha do catálogo → carrega o info do jogo e abre o editor.
+    let weak = ui.as_weak();
+    ui.on_game_clicked(move |idx| {
+        if let Some(ui) = weak.upgrade() {
+            handle_game_clicked(&ui, idx);
+        }
+    });
+
+    // Salvar os metadados editados no CFG/<GameID>.cfg do jogo selecionado.
+    let weak = ui.as_weak();
+    ui.on_save_game_info_clicked(move || {
+        if let Some(ui) = weak.upgrade() {
+            handle_save_game_info(&ui);
         }
     });
 
@@ -413,6 +434,134 @@ fn run_download_art(target: &Path) -> UiUpdate {
     ))
 }
 
+/// Clique numa linha do catálogo: abre o editor de metadados in-place do jogo.
+/// Lê o `CFG/<GameID>.cfg` atual (rápido, I/O local → na thread da UI) e
+/// pré-preenche os campos. Jogo sem Game ID abre só-leitura (sem `.cfg` p/ casar).
+fn handle_game_clicked(ui: &AppWindow, idx: i32) {
+    let rows = ui.get_catalog_rows();
+    let Some(row) = (idx >= 0).then(|| rows.row_data(idx as usize)).flatten() else {
+        return;
+    };
+    let target = PathBuf::from(ui.get_dir_path().to_string().trim());
+
+    ui.set_editor_index(idx);
+    ui.set_editor_file_name(row.file_name.clone());
+    ui.set_editor_media(row.media.clone());
+    ui.set_editor_note("".into());
+    set_editor_fields(ui, &GameInfo::default());
+    ui.set_editor_has_cover(false);
+
+    match GameId::parse(row.game_id.as_str()) {
+        Some(id) => {
+            ui.set_editor_game_id(id.as_str().into());
+            ui.set_editor_can_edit(true);
+            match FsGameInfoStore::new(&target).load(&id) {
+                Ok(info) => set_editor_fields(ui, &info),
+                Err(e) => {
+                    ui.set_editor_note(format!("Não foi possível ler os metadados: {e}").into())
+                }
+            }
+            load_cover(ui, &target, &id);
+        }
+        None => {
+            ui.set_editor_game_id("".into());
+            ui.set_editor_can_edit(false);
+        }
+    }
+
+    ui.set_show_game_editor(true);
+}
+
+/// Preenche os 5 campos do editor a partir de um `GameInfo` (campo ausente → "").
+fn set_editor_fields(ui: &AppWindow, info: &GameInfo) {
+    let s = |o: &Option<String>| o.clone().unwrap_or_default().into();
+    ui.set_field_title(s(&info.title));
+    ui.set_field_genre(s(&info.genre));
+    ui.set_field_release(s(&info.release));
+    ui.set_field_developer(s(&info.developer));
+    ui.set_field_description(s(&info.description));
+}
+
+/// Carrega a capa `ART/<id>_COV.{png,jpg}` no editor, se existir. Falha é
+/// silenciosa (capa some) — é só enriquecimento visual.
+fn load_cover(ui: &AppWindow, target: &Path, id: &GameId) {
+    let art = target.join("ART");
+    for ext in ["png", "jpg"] {
+        let path = art.join(format!("{}_COV.{ext}", id.as_str()));
+        if path.is_file()
+            && let Ok(img) = slint::Image::load_from_path(&path)
+        {
+            ui.set_editor_cover(img);
+            ui.set_editor_has_cover(true);
+            return;
+        }
+    }
+}
+
+/// Salvar do editor: monta o `GameInfo` (campo vazio → `None` = remover a chave),
+/// valida e grava por read-modify-write em `CFG/<GameID>.cfg` (preserva
+/// compatibilidade). I/O local rápido → na thread da UI. Erro vira aviso no
+/// editor, sem fechar. Sucesso fecha o editor e atualiza o título da linha.
+fn handle_save_game_info(ui: &AppWindow) {
+    let Some(id) = GameId::parse(ui.get_editor_game_id().as_str()) else {
+        ui.set_editor_note("Jogo sem Game ID — não há onde gravar.".into());
+        return;
+    };
+
+    // Todos os 5 campos são texto livre — o OPL exibe Release verbatim (não
+    // parseia data), então não há formato a impor; só o limite de 255 caracteres
+    // (validado no `save`) vale para qualquer campo.
+    let info = GameInfo {
+        title: non_empty(ui.get_field_title().as_str()),
+        genre: non_empty(ui.get_field_genre().as_str()),
+        release: non_empty(ui.get_field_release().as_str()),
+        developer: non_empty(ui.get_field_developer().as_str()),
+        description: non_empty(ui.get_field_description().as_str()),
+    };
+
+    let target = PathBuf::from(ui.get_dir_path().to_string().trim());
+    match FsGameInfoStore::new(&target).save(&id, &info) {
+        Ok(()) => {
+            update_row_title(ui, &info);
+            ui.set_show_game_editor(false);
+            ui.set_message_text(format!("Metadados salvos em CFG/{}.cfg.", id.as_str()).into());
+        }
+        Err(e) => ui.set_editor_note(format!("Não foi possível salvar — {e}").into()),
+    }
+}
+
+/// Atualiza o título exibido na linha editada: usa o `Title` sobrescrito, ou
+/// volta ao título derivado do arquivo quando o campo é esvaziado. Mantém a lista
+/// coerente com o que o OPL passará a mostrar, sem reler o disco.
+fn update_row_title(ui: &AppWindow, info: &GameInfo) {
+    let idx = ui.get_editor_index();
+    let rows = ui.get_catalog_rows();
+    let Some(mut row) = (idx >= 0).then(|| rows.row_data(idx as usize)).flatten() else {
+        return;
+    };
+    let title = info.title.clone().unwrap_or_else(|| {
+        let derived = derive_title(row.file_name.as_str());
+        if derived.is_empty() {
+            row.file_name.to_string()
+        } else {
+            derived
+        }
+    });
+    row.title = title.into();
+    rows.set_row_data(idx as usize, row);
+}
+
+/// `Some(texto_trim)` se não-vazio após `trim`; senão `None`. Usado para mapear
+/// campo de texto vazio em "remover a chave" no `.cfg`.
+fn non_empty(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
 /// Marca `busy`, exibe a mensagem de progresso e roda `job` numa worker thread,
 /// devolvendo o `UiUpdate` para o event loop quando terminar. Centraliza o padrão
 /// de threading para que `handle_activate`/`handle_deactivate` fiquem declarativos.
@@ -544,6 +693,7 @@ fn row_from_meta(m: &GameMeta) -> RowData {
         }
         .to_string(),
         size: format_size(m.size_bytes),
+        file_name: m.file_name.clone(),
     }
 }
 
