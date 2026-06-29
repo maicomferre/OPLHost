@@ -73,13 +73,13 @@ share.
       retorna **503 intermitente** (serviço pesado/rate-limited). A *listagem* do
       zip funciona. → `ArtProvider` com retry/backoff, falha graciosa e **base URL
       configurável** (mirror ou backup local descompactado servido por estático).
-- [ ] **`systemctl reload smbd` (não `restart`)** — apply/rollback passaram a
-      recarregar o daemon (decisão 2026-06-28). **Validar no ambiente:** (a) que o
-      reload aplica um share novo sem precisar de restart na versão de Samba alvo,
-      inclusive mudanças no bloco `[global]` (NT1); (b) o comportamento quando o
-      `smbd` está **parado** — o app não controla o ciclo de vida do daemon global,
-      então o reload pressupõe o Samba já habilitado pelo sistema. Reavaliar se
-      algum cenário exigir garantir o daemon ativo sem um "start" invasivo.
+- [x] **`systemctl reload smbd` (não `restart`)** — apply/rollback passaram a
+      recarregar o daemon (decisão 2026-06-28). **Validado em campo (2026-06-28):**
+      ao ativar pelo app (só `reload`), o OPL conectou na hora e enxergou os jogos
+      — o reload aplicou o share NT1 do `[global]` sem precisar de restart.
+      Pendência residual: comportamento quando o `smbd` está **parado** (o app não
+      liga o daemon global; o reload pressupõe Samba já habilitado) — documentar a
+      mensagem ao usuário nesse cenário.
 - [ ] **Status derivado da config** — `status()` agora lê `opl_share.conf` +
       `include` (sem root, arquivos world-readable). Confirmar que o
       `opl_share.conf` criado sob `pkexec` fica legível (0644) para o usuário ler o
@@ -121,13 +121,58 @@ share.
       o backup `OPL_BACKUP` do usuário em 2026-06-27).
 - [x] Catálogo rico exibido na UI (título/ID/mídia/tamanho/contagem) — validado em
       execução real com `OPL_BACKUP`.
-- [ ] Capa baixada por Game ID e gravada em `ART/` com a nomenclatura do OPL;
-      OPL reconhece.
-- [~] Autenticação opcional funciona (conexão com usuário/senha além do guest).
+- [x] Capa baixada por Game ID e gravada em `ART/` com a nomenclatura do OPL;
+      OPL reconhece. **Validado em campo (2026-06-28):** capas presentes em `ART/`
+      e o OPL renderiza a arte do disco na lista. (Os slots "no image" da tela de
+      *Informações* do OPL são screenshots `_SCR`, não a capa — e os campos de
+      texto Gênero/Lançamento/Desenvolvedor/Descrição vêm vazios → ver Backlog.)
+- [x] Autenticação opcional funciona (conexão com usuário/senha além do guest).
       Conf gerado e validado com `testparm` (Samba 4.23.x); fluxo `smbpasswd`/
-      `valid users` implementado e coberto por teste. **Pendente:** conexão real
-      de um cliente SMB autenticando — testar junto com a validação do OPL.
-- [ ] Sem scraping: apenas fontes consumíveis (§7).
+      `valid users` implementado e coberto por teste. **Validado em campo
+      (2026-06-28):** OPL conectou com usuário `maicom` + senha; sem senha, recusou.
+- [x] Sem scraping: apenas fontes consumíveis (§7).
+
+## Validação em campo (2026-06-28) — sessão real com PS2 + OPL
+OPL **v1.2.0-beta-2012-b84c2b**, share `PS2SMB` via Ethernet ("Jogos no ETH").
+- ✅ **Guest:** ativou pelo app (uma senha do Polkit), o OPL conectou na hora e
+  listou os jogos.
+- ✅ **Autenticado:** usuário `maicom` + senha → login OK; sem senha → recusou.
+- ✅ **`reload` basta:** OPL passou a enxergar o share NT1 logo após o `reload`,
+  sem restart.
+- ✅ **Capas:** presentes em `ART/`, OPL renderiza a arte do disco.
+
+### Achados a tratar (backlog pós-Fase 2)
+- **Scan sem filtro de extensão** (`infra/scan.rs`): lista QUALQUER arquivo de
+  `CD/`/`DVD/`, daí a entrada espúria `games — 0 MB` (3 "sem Game ID" no resumo).
+  → filtrar por extensão de imagem de jogo (`.iso`, `.zso`, talvez `.cso`) e
+  ignorar 0 bytes. Correção pequena e isolada.
+- **"Faltando alguns" jogos:** o OPL também lista APPS/POPS e coleções de
+  emulador (ex.: "230 jogos Super Nintendo", "Sonic Pack 147 ROMS") que vivem
+  FORA de `CD/`/`DVD/`. Nosso scan só varre ISOs de PS2 por design — divergência
+  esperada. Decidir se o catálogo deve cobrir APPS/POPS (provável Fase 3).
+- **Metadados do jogo (tela "Informações" do OPL vem vazia):** Título/Gênero/
+  Lançamento/Desenvolvedor/Descrição/Rating em branco. Ideia do usuário: ao
+  clicar num jogo da lista, abrir um **editor in-place** (view sobreposta, sem
+  mover os elementos existentes) mostrando capa, nome, nome do arquivo, Game ID
+  ("slug"), hash, e campos **editáveis** do que o OPL suporta. **Imagem da ISO
+  não é editável** — mas a ART (capa) é gerenciável (trocar/baixar). **A
+  confirmar via PyOPLM/fonte do OPL (CLAUDE.md §7/§12):** onde o OPL persiste
+  esses metadados (provável `CFG/<GameID>.cfg` e/ou base de info) e o override de
+  título exibido. Não assumir verdade de fórum. → candidato a Fase 3 (ou 2.5).
+- **Sem persistência de estado da UI** entre execuções: o app não salva o
+  diretório-alvo nem o toggle de auth num config próprio (XDG). Só persistem o
+  `opl_meta.json` (no disco-alvo) e a config/conta no nível do sistema. Avaliar um
+  `~/.config/oplhost/config.json` para lembrar a última pasta.
+- **Tela de Configurações com mau aproveitamento de espaço:** o campo de senha
+  renderiza como caixa alta; deve ser `LineEdit` de uma linha, conteúdo
+  top-alinhado, deixando espaço para os próximos itens (firewall etc.).
+- **Pendência residual `reload`:** comportamento quando o `smbd` está parado (o
+  app não liga o daemon) — documentar/mensagem ao usuário.
+- **Persistência (resposta ao usuário):** `opl_meta.json` na raiz do disco-alvo
+  (cache, apagável); share isolado em `/etc/samba/opl_share.conf` + `include` no
+  `smb.conf` (removidos no "Desativar e reverter"); a senha NÃO é gravada pelo
+  app — vai para o Samba do sistema via `smbpasswd` (`pdbedit -L`,
+  `passdb.tdb`), e o `smbpasswd -x` a remove no rollback.
 
 ## Riscos e mitigação
 - **Risco:** endpoints externos instáveis/offline. → **Mitigação:** cache local,
@@ -177,3 +222,5 @@ sobre a passada de `cargo fmt` — sem conflitos entre si. Commits **assinados
 | 2026-06-28 | CI do GitHub Actions (branch `ci-github-actions`): build/clippy/test bloqueantes, `fmt` não-bloqueante (repo ainda não fmt-clean sob style_edition 2024 do rustfmt 1.9 — passada de `cargo fmt` dedicada fica como pendência) | _(pendente)_ |
 | 2026-06-28 | Passada de `cargo fmt --all` dedicada (branch `chore-cargo-fmt`, sobre `fase-2-biblioteca`): 14 arquivos reformatados, só formatação; workspace fmt-clean; 66 testes verdes | `63bbee0` |
 | 2026-06-28 | Encadeamento: `fase-2-settings-toggle-servidor` e `ci-github-actions` rebaseadas sobre `chore-cargo-fmt`; gate `fmt` do CI virou bloqueante (`continue-on-error` removido). build/clippy/66 testes verdes; tree fmt-clean | settings `ef21649`, CI `9dd099f` |
+| 2026-06-28 | Roteiro de teste manual alinhado à UI atual (toggle único, painel de Configurações, modelo `reload`) + 4 critérios de fechamento (capas/OPL, auth real, `reload`, 0644) | `8ddb018` |
+| 2026-06-28 | **Validação em campo com PS2 + OPL v1.2.0-beta-2012-b84c2b:** guest, auth real (`maicom`/senha), `reload` e capas OK → 4 critérios fechados. Backlog pós-Fase 2 registrado (filtro de scan, metadados editáveis in-place, persistência de UI, layout de Settings) | _(este commit)_ |
