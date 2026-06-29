@@ -54,7 +54,7 @@ impl MetaStore for JsonMetaStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oplhost_core::{GameEntry, MediaKind};
+    use oplhost_core::{GameEntry, GameMeta, MediaKind};
 
     /// Diretório temporário único POR CHAMADA — os testes rodam em paralelo e
     /// não podem disputar o mesmo arquivo. Combina PID + contador atômico.
@@ -80,10 +80,10 @@ mod tests {
     fn save_depois_load_preserva_o_cache() {
         let dir = temp_dir();
         let store = JsonMetaStore::new(&dir);
-        let meta = OplMeta::rebuild_from(&[GameEntry {
+        let meta = OplMeta::from_games(vec![GameMeta::from(&GameEntry {
             file_name: "jogo.iso".into(),
             size_bytes: 123,
-        }]);
+        })]);
 
         store.save(&meta).unwrap();
         let voltou = store.load().unwrap().unwrap();

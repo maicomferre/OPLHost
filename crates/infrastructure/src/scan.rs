@@ -1,6 +1,6 @@
 //! Varredura das ISOs no diretório-alvo. Lê `CD/` e `DVD/` e devolve as entradas
-//! para o `core` calcular o catálogo (`summarize`) e reconstruir o cache
-//! (`OplMeta::rebuild_from`) — o caminho que garante o §6 mesmo sem JSON.
+//! (com o caminho real) para o `core` calcular o catálogo (`summarize`) e montar
+//! o cache — o caminho que garante o §6 mesmo sem JSON.
 
 use std::path::{Path, PathBuf};
 
@@ -50,15 +50,6 @@ pub fn scan_games_with_paths(root: &Path) -> Vec<ScannedGame> {
     out
 }
 
-/// Variante só com as entradas de catálogo (sem os caminhos), para o cálculo
-/// puro do `core` (`summarize`, `OplMeta::rebuild_from`).
-pub fn scan_games(root: &Path) -> Vec<GameEntry> {
-    scan_games_with_paths(root)
-        .into_iter()
-        .map(|s| s.entry)
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,11 +63,19 @@ mod tests {
         d
     }
 
+    /// Só as entradas de catálogo (sem os caminhos), para os asserts.
+    fn entries(root: &Path) -> Vec<GameEntry> {
+        scan_games_with_paths(root)
+            .into_iter()
+            .map(|s| s.entry)
+            .collect()
+    }
+
     #[test]
     fn diretorio_sem_cd_dvd_devolve_vazio() {
         let root = temp_root();
         std::fs::create_dir_all(&root).unwrap();
-        assert!(scan_games(&root).is_empty());
+        assert!(entries(&root).is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -88,7 +87,7 @@ mod tests {
         std::fs::write(root.join("CD/a.iso"), b"xx").unwrap();
         std::fs::write(root.join("DVD/b.iso"), b"yyyy").unwrap();
 
-        let mut games = scan_games(&root);
+        let mut games = entries(&root);
         games.sort_by(|a, b| a.file_name.cmp(&b.file_name));
 
         assert_eq!(games.len(), 2);
@@ -108,7 +107,7 @@ mod tests {
         std::fs::write(root.join("CD/vazio.iso"), b"").unwrap(); // .iso porém 0 byte
         std::fs::write(root.join("CD/valido.iso"), b"data").unwrap();
 
-        let games = scan_games(&root);
+        let games = entries(&root);
         assert_eq!(games.len(), 1, "só a ISO não-vazia entra no catálogo");
         assert_eq!(games[0].file_name, "valido.iso");
         let _ = std::fs::remove_dir_all(&root);

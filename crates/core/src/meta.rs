@@ -2,9 +2,9 @@
 //!
 //! Cache de conveniência (§6): nomes, categorias, tamanho, contagem. Vive na
 //! raiz do diretório-alvo para portabilidade se o usuário mover o disco.
-//! **Requisito crítico:** o app funciona mesmo se o JSON for apagado — daí
-//! `rebuild_from`, que reconstrói o estado relendo as ISOs de `CD/`/`DVD/`.
-//! Nunca é fonte de verdade única.
+//! **Requisito crítico:** o app funciona mesmo se o JSON for apagado — o estado
+//! é reconstruído relendo as ISOs de `CD/`/`DVD/`. Nunca é fonte de verdade
+//! única; o cache é só um atalho (ver [`OplMeta::game_id_for`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -92,15 +92,6 @@ impl Default for OplMeta {
 }
 
 impl OplMeta {
-    /// Reconstrói o cache a partir das ISOs lidas do disco. É o caminho usado
-    /// quando o JSON está ausente ou corrompido — garante o §6.
-    pub fn rebuild_from(entries: &[GameEntry]) -> Self {
-        Self {
-            version: META_VERSION,
-            games: entries.iter().map(GameMeta::from).collect(),
-        }
-    }
-
     /// Monta o cache a partir de entradas já enriquecidas (com Game ID lido da
     /// ISO pela infraestrutura). Usado pela UI ao listar o catálogo rico.
     pub fn from_games(games: Vec<GameMeta>) -> Self {
@@ -110,23 +101,31 @@ impl OplMeta {
         }
     }
 
-    /// Resumo agregado equivalente ao do catálogo, sem reabrir o disco.
+    /// Resumo agregado equivalente ao do catálogo, sem reabrir o disco. Delega a
+    /// [`summarize`] (a mesma regra CD/DVD do catálogo) projetando cada `GameMeta`
+    /// de volta numa `GameEntry` — uma só fonte de verdade para a contagem.
     pub fn summary(&self) -> CatalogSummary {
-        let mut s = CatalogSummary::default();
-        for g in &self.games {
-            s.total_bytes += g.size_bytes;
-            match g.media {
-                MediaKind::Cd => s.cd_count += 1,
-                MediaKind::Dvd => s.dvd_count += 1,
-            }
-        }
-        s
+        let entries: Vec<GameEntry> = self
+            .games
+            .iter()
+            .map(|g| GameEntry {
+                file_name: g.file_name.clone(),
+                size_bytes: g.size_bytes,
+            })
+            .collect();
+        summarize(&entries)
     }
 
-    /// `true` se o cache bate com a varredura atual do disco. A UI usa isto para
-    /// decidir se reconstrói (ex.: usuário copiou ISOs por fora do app).
-    pub fn matches(&self, entries: &[GameEntry]) -> bool {
-        self.summary() == summarize(entries)
+    /// Game ID já conhecido de uma ISO no cache, casando por nome + tamanho. Serve
+    /// para reaproveitar o ID lido numa sessão anterior e evitar reabrir a ISO
+    /// para reler o `SYSTEM.CNF`. Só retorna `Some` quando o cache realmente tem
+    /// o ID resolvido; ISO nova/alterada (ou sem ID no cache) → `None`, e o
+    /// chamador relê do disco (honra o §6: cache é só atalho, nunca obrigatório).
+    pub fn game_id_for(&self, file_name: &str, size_bytes: u64) -> Option<&GameId> {
+        self.games
+            .iter()
+            .find(|g| g.file_name == file_name && g.size_bytes == size_bytes)
+            .and_then(|g| g.game_id.as_ref())
     }
 }
 
@@ -177,9 +176,14 @@ mod tests {
         ]
     }
 
+    /// Cache a partir de entradas cruas (sem Game ID), como a varredura inicial.
+    fn cache(entries: &[GameEntry]) -> OplMeta {
+        OplMeta::from_games(entries.iter().map(GameMeta::from).collect())
+    }
+
     #[test]
-    fn rebuild_from_categoriza_e_preenche_versao() {
-        let meta = OplMeta::rebuild_from(&entries());
+    fn from_games_categoriza_e_preenche_versao() {
+        let meta = cache(&entries());
         assert_eq!(meta.version, META_VERSION);
         assert_eq!(meta.games.len(), 2);
         assert_eq!(meta.games[0].media, MediaKind::Cd);
@@ -189,22 +193,30 @@ mod tests {
     #[test]
     fn summary_do_cache_bate_com_o_do_catalogo() {
         let es = entries();
-        let meta = OplMeta::rebuild_from(&es);
-        assert_eq!(meta.summary(), summarize(&es));
-        assert!(meta.matches(&es));
+        assert_eq!(cache(&es).summary(), summarize(&es));
     }
 
     #[test]
-    fn matches_falso_quando_o_disco_diverge_do_cache() {
-        let meta = OplMeta::rebuild_from(&entries());
-        let mut outras = entries();
-        outras.pop(); // disco agora tem menos jogos que o cache
-        assert!(!meta.matches(&outras));
+    fn game_id_for_reaproveita_id_por_nome_e_tamanho() {
+        let entry = GameEntry {
+            file_name: "SLUS_200.02.God of War.iso".into(),
+            size_bytes: 4 * 1024 * 1024 * 1024,
+        };
+        let id = GameId::parse("SLUS_200.02");
+        let meta = OplMeta::from_games(vec![GameMeta::from_entry(&entry, id.clone())]);
+
+        // Mesmo nome + tamanho → reaproveita o ID do cache.
+        assert_eq!(meta.game_id_for(&entry.file_name, entry.size_bytes), id.as_ref());
+        // Tamanho diferente (ISO trocada) → não casa, força releitura.
+        assert_eq!(meta.game_id_for(&entry.file_name, 123), None);
+        // Entrada sem ID no cache → None (relê do disco).
+        let sem_id = OplMeta::from_games(vec![GameMeta::from(&entry)]);
+        assert_eq!(sem_id.game_id_for(&entry.file_name, entry.size_bytes), None);
     }
 
     #[test]
     fn roundtrip_json_preserva_o_cache() {
-        let meta = OplMeta::rebuild_from(&entries());
+        let meta = cache(&entries());
         let json = serde_json::to_string(&meta).unwrap();
         let voltou: OplMeta = serde_json::from_str(&json).unwrap();
         assert_eq!(meta, voltou);
