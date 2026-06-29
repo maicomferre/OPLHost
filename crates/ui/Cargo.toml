@@ -41,4 +41,5 @@ maintainer-scripts = "packaging/"
 assets = [
     ["target/release/oplhost", "usr/bin/", "755"],
     ["packaging/oplhost.desktop", "usr/share/applications/", "644"],
+    ["packaging/oplhost.png", "usr/share/icons/hicolor/256x256/apps/oplhost.png", "644"],
 ]
