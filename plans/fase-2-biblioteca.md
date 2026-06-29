@@ -5,14 +5,15 @@
 > **consumir capas das fontes externas**. Constrói sobre o `core` da Fase 1
 > (`catalog`/`meta`) sem tocar a regra de inversão de dependência.
 
-- **Status:** Em andamento
+- **Status:** Concluída (pendente PR para `main`) — todos os 4 critérios de
+  aceitação fechados e **validados em campo** com PS2 + OPL v1.2.0-beta-2012
+  (2026-06-28). Achados de campo viram backlog pós-fase (Fase 3), não bloqueiam o
+  fechamento. Residual: um `stat` de 0644 que o usuário roda na máquina.
 - **Criado em:** 2026-06-27
-- **Última atualização:** 2026-06-28 (reforma de UX: painel de Configurações
-  separado + controle ÚNICO de servidor "ativar/desativar"; `status` derivado de
-  a config do OPL estar aplicada, não do `smbd` global; `reload` no lugar de
-  `restart`; Trait `StorageBackend` sem `start`/`stop`. Branch
-  `fase-2-settings-toggle-servidor`. Depois: passada de `cargo fmt --all`
-  dedicada + CI com `fmt` bloqueante — ver "Encadeamento de branches")
+- **Última atualização:** 2026-06-28 (validação em campo PS2+OPL: guest, auth
+  real, `reload` e capas OK → fase pronta para PR; fixes de UX: filtro de
+  extensão no scan + senha numa linha nas Configurações. core 32 / infra 37
+  testes verdes; CI verde no `origin`)
 
 ## Contexto e objetivo
 O OPL descobre jogos pela estrutura de pastas e identifica cada um pelo **Game
