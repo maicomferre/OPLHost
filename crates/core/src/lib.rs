@@ -13,7 +13,7 @@ pub mod meta;
 pub mod opl_layout;
 pub mod ports;
 
-pub use catalog::{CatalogSummary, GameEntry, Media, summarize};
+pub use catalog::{CatalogSummary, GameEntry, Media, is_game_image_name, summarize};
 pub use domain::{BackendError, ServerStatus, ShareAuth, ShareConfig};
 pub use game_id::{GameId, derive_title, parse_boot2_game_id};
 pub use meta::{GameMeta, MediaKind, MetaError, MetaStore, OplMeta};

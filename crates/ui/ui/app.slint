@@ -219,6 +219,9 @@ export component AppWindow inherits Window {
                     }
                     if root.auth-enabled: VerticalBox {
                         spacing: 6px;
+                        // Empacota no topo: sem isto o LineEdit esticava na vertical
+                        // e desperdiçava a tela (feedback 2026-06-28).
+                        alignment: start;
                         Text {
                             text: "Usuário: " + root.auth-username
                                 + "  —  no OPL, configure o SMB com este usuário e a senha abaixo.";
@@ -230,6 +233,8 @@ export component AppWindow inherits Window {
                             input-type: password;
                             text <=> root.auth-password;
                             enabled: !root.busy;
+                            // Mantém a altura de UMA linha (não estica na vertical).
+                            vertical-stretch: 0;
                         }
                         Text {
                             text: "Sem isto o share fica aberto (guest): qualquer um na sua rede "

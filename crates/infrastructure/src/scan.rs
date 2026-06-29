@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use oplhost_core::GameEntry;
+use oplhost_core::{GameEntry, is_game_image_name};
 
 /// Subpastas do OPL que contêm ISOs de jogo.
 const GAME_DIRS: [&str; 2] = ["CD", "DVD"];
@@ -32,10 +32,16 @@ pub fn scan_games_with_paths(root: &Path) -> Vec<ScannedGame> {
                 Ok(m) if m.is_file() => m,
                 _ => continue,
             };
+            // Ignora lixo: só imagens de jogo (extensão do OPL, regra do `core`)
+            // e nada de arquivos vazios. Evita entradas como "games — 0 MB".
+            let file_name = item.file_name().to_string_lossy().into_owned();
+            if meta.len() == 0 || !is_game_image_name(&file_name) {
+                continue;
+            }
             out.push(ScannedGame {
                 path: item.path(),
                 entry: GameEntry {
-                    file_name: item.file_name().to_string_lossy().into_owned(),
+                    file_name,
                     size_bytes: meta.len(),
                 },
             });
@@ -89,6 +95,22 @@ mod tests {
         assert_eq!(games[0].file_name, "a.iso");
         assert_eq!(games[0].size_bytes, 2);
         assert_eq!(games[1].size_bytes, 4);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn ignora_lixo_sem_extensao_de_jogo_e_arquivos_vazios() {
+        let root = temp_root();
+        std::fs::create_dir_all(root.join("CD")).unwrap();
+        // o caso real: arquivo solto "games" (sem extensão) que virava "— 0 MB"
+        std::fs::write(root.join("CD/games"), b"").unwrap();
+        std::fs::write(root.join("CD/LEIAME.txt"), b"nota").unwrap();
+        std::fs::write(root.join("CD/vazio.iso"), b"").unwrap(); // .iso porém 0 byte
+        std::fs::write(root.join("CD/valido.iso"), b"data").unwrap();
+
+        let games = scan_games(&root);
+        assert_eq!(games.len(), 1, "só a ISO não-vazia entra no catálogo");
+        assert_eq!(games[0].file_name, "valido.iso");
         let _ = std::fs::remove_dir_all(&root);
     }
 
