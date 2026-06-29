@@ -1,4 +1,4 @@
-# oplhost
+# OPLHost
 
 Servidor SMB dedicado ao Open PS2 Loader (OPL), para Linux.
 
