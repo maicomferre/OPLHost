@@ -57,11 +57,15 @@ pedindo a senha uma única vez.
 Os pacotes são publicados em
 [Releases](https://github.com/maicomferre/OPLHost/releases). Baixe o `.deb` da
 versão desejada e instale com o `apt`, que resolve as dependências
-automaticamente:
+automaticamente (o nome do arquivo carrega a versão, por exemplo
+`oplhost_0.1.0~alpha.1-1_amd64.deb`):
 
 ```bash
-sudo apt install ./oplhost_0.1.0-1_amd64.deb
+sudo apt install ./oplhost_*.deb
 ```
+
+Todas as versões são pré-lançamentos (alpha); veja a política de versões em
+[`RELEASING.md`](RELEASING.md).
 
 Em seguida, abra o `oplhost` pelo menu de aplicativos ou pelo terminal:
 

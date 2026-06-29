@@ -1,0 +1,67 @@
+# Release: dispara ao publicar uma tag `vX.Y.Z-alpha.N`, gera o pacote .deb do
+# workspace e publica como Release (pre-release) do GitHub, anexando o pacote.
+# A política de versões está em RELEASING.md. O passo de conferência garante que
+# a tag e a versão do crate `oplhost` (crates/ui/Cargo.toml) não divirjam.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Necessário para o softprops/action-gh-release criar a Release e anexar arquivos.
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Mesmas libs de desenvolvimento da Slint usadas no CI.
+      - name: Dependências de sistema do Slint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev
+
+      - name: Toolchain Rust estável
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache de cargo
+        uses: Swatinem/rust-cache@v2
+
+      # Falha cedo se a tag não casar com a versão do crate publicado.
+      - name: Confere tag vs versão do Cargo
+        run: |
+          CARGO_VER=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c "import sys, json; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'oplhost'))")
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG_VER  cargo=$CARGO_VER"
+          if [ "$CARGO_VER" != "$TAG_VER" ]; then
+            echo "::error::Tag ($TAG_VER) difere da versão do Cargo ($CARGO_VER). Alinhe crates/ui/Cargo.toml antes de taggear (ver RELEASING.md)." >&2
+            exit 1
+          fi
+
+      - name: Instala cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Gera o .deb
+        run: cargo deb -p oplhost
+
+      - name: Publica a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/debian/*.deb
+          # Todas as versões são alpha → sempre pre-release.
+          prerelease: ${{ contains(github.ref_name, 'alpha') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
