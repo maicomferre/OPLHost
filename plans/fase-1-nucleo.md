@@ -4,12 +4,12 @@
 > (SMBv1 confirmado com PS2). O scaffold inicial (esqueleto que compila e roda)
 > é montado ainda durante a Fase 0, mas os Traits derivam do que o spike provou.
 
-- **Status:** Em andamento
+- **Status:** ✅ Concluída — núcleo na `main` (PR #1). Workspace 3 crates, Traits,
+  `SmbBackend`, firewall, Polkit (`pkexec`), estrutura de pastas, `opl_meta.json`,
+  seletor nativo de pasta, `.deb`; ciclo apply→smbclient→rollback validado ponta a
+  ponta. Detalhe no Histórico abaixo.
 - **Criado em:** 2026-06-26
-- **Última atualização:** 2026-06-27 (spike portado para `SmbBackend`; adapters,
-  catálogo/meta e fiação da UI feitos; `pkexec` em worker thread; seletor nativo
-  de pasta via `zenity`/`kdialog`; `.deb` gerado; ciclo apply→smbclient→rollback
-  validado ponta a ponta)
+- **Última atualização:** 2026-06-27
 
 ## Contexto e objetivo
 Transformar o aprendizado do spike numa arquitetura Clean (Ports & Adapters)
@@ -88,8 +88,9 @@ injeção da estrutura de pastas do OPL e `opl_meta.json`.
 - [x] Ciclo real `apply`→`smbclient`→`rollback` validado ponta a ponta contra o
       código de produção (`SmbBackend` + `PkexecEscalator` + builders), via
       example descartável. Resultado abaixo.
-- [ ] Click-through do ciclo pela própria GUI (a fiação usa o mesmo backend já
-      validado); instalar e abrir o `.deb` num sistema limpo.
+- [x] Click-through do ciclo pela própria GUI (coberto na validação em campo da
+      Fase 2); `.deb` instalado/validado (ajuste de glibc floor para Mint 21 em
+      `545a0b2`).
 
 ## Resultado da validação ponta a ponta (2026-06-27)
 Ambiente: Samba 4.x, `smbd` ativo, baseline limpo (`server min protocol =
@@ -131,9 +132,9 @@ volta ao estado anterior sem vestígios.
 | Data | Mudança | Commit |
 |------|---------|--------|
 | 2026-06-26 | Plano da fase aberto | `b8e355e` |
-| 2026-06-26 | Scaffold que compila e roda: workspace 3 crates, core testado, infra com stubs, janela Slint | _(pendente)_ |
-| 2026-06-27 | Spike portado para `SmbBackend` (escalador Polkit, firewall, scripts puros testados); `core` ganha `catalog`+`meta`; `JsonMetaStore`/`scan`/`net`; UI fiada ao backend; metadata `.deb`. 28 testes verdes, clippy limpo | _(pendente)_ |
-| 2026-06-27 | `pkexec` (apply/rollback) movido para worker thread; UI não trava no prompt do Polkit (`upgrade_in_event_loop` + flag `busy`) | _(pendente)_ |
-| 2026-06-27 | Seletor nativo de pasta via `zenity`/`kdialog` (adapter `dialog`), na worker thread; `Depends` do `.deb` atualizado. 31 testes verdes | _(pendente)_ |
-| 2026-06-27 | `.deb` gerado com `cargo deb` (deps `$auto`, changelog, descrição estendida); `lintian` sem erros | _(pendente)_ |
-| 2026-06-27 | Ciclo apply→smbclient(NT1, lê/grava)→rollback validado ponta a ponta contra o código de produção; sistema volta limpo | _(pendente)_ |
+| 2026-06-26 | Scaffold da Clean Architecture: workspace 3 crates, core testado, infra com stubs, janela Slint | `da2d0c9` |
+| 2026-06-27 | Spike portado para `SmbBackend` (escalador Polkit, firewall, scripts puros testados); `core` `catalog`+`meta`; `JsonMetaStore`/`scan`/`net`; UI fiada; metadata `.deb` | `21d121f` |
+| 2026-06-27 | `pkexec` (apply/rollback) movido para worker thread (`upgrade_in_event_loop` + flag `busy`) | `819c48b` |
+| 2026-06-27 | Seletor nativo de pasta via `zenity`/`kdialog` (adapter `dialog`), na worker thread; `Depends` do `.deb` atualizado | `4e130bf` |
+| 2026-06-27 | `.deb` gerado com `cargo deb` (deps `$auto`, changelog, descrição); `lintian` sem erros | `837e11d` |
+| 2026-06-27 | Ciclo apply→smbclient(NT1)→rollback validado ponta a ponta contra o código de produção; mergeada na `main` | `9306812` (PR #1 `4b218ce`) |

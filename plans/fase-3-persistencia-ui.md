@@ -1,7 +1,6 @@
 # Fase 3 — Persistência de estado da UI (XDG) + polish de empacotamento (ícone/.desktop)
 
-> Primeiro item da Fase 3. O `CLAUDE.md` guarda as REGRAS; este arquivo guarda o
-> *porquê* e o andamento. Manter atualizado e commitar.
+> Primeiro item da Fase 3. (Papel dos planos: ver `plans/README.md`.)
 
 - **Status:** Em andamento (persistência implementada; falta validar na GUI em ambiente real)
 - **Criado em:** 2026-06-29
@@ -114,5 +113,6 @@ nome sugere).
 
 | Data | Mudança | Commit |
 |------|---------|--------|
-| 2026-06-29 | Plano criado (persistência XDG + polish ícone/.desktop) | `7b43b8a` |
-| 2026-06-29 | `SettingsStore`/`AppSettings` no core + `FsSettingsStore` no infra + integração na UI (load no start, save nos gatilhos); 8 testes novos | `<pendente>` |
+| 2026-06-29 | Plano criado + ícone do app no `.deb` (persistência XDG) | `7b43b8a` (PR #7) |
+| 2026-06-29 | `SettingsStore`/`AppSettings` no core + `FsSettingsStore` no infra + integração na UI (load no start, save nos gatilhos); 8 testes novos | `ca98be1` (PR #8) |
+| 2026-06-29 | Polish de empacotamento: instala em glibc 2.35 (Mint 21) + ícone de janela no Slint | `545a0b2` (PR #9) |
