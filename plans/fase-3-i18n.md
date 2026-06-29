@@ -3,7 +3,7 @@
 > Terceiro item da Fase 3. O `CLAUDE.md` guarda as REGRAS; este arquivo guarda o
 > *porquê* e o andamento. Manter atualizado e commitar.
 
-- **Status:** Em andamento (implementado; falta validar a troca de idioma na GUI)
+- **Status:** Concluído (implementado e validado na GUI em en-US/pt-BR; bug de layout de startup corrigido)
 - **Criado em:** 2026-06-29
 - **Última atualização:** 2026-06-29
 
@@ -82,9 +82,9 @@ cai no `msgid`) e evita um `.po`/`.ftl` identidade para o inglês.
 
 ## Critérios de aceitação
 
-- [ ] Em locale `pt_BR`, a UI inteira (estática + dinâmica) aparece em português.
-      *(implementado; validar na GUI trocando `$LANG`)*
-- [ ] Em locale en (ou outro), aparece em inglês. *(idem)*
+- [x] Em locale `pt_BR`, a UI inteira (estática + dinâmica) aparece em português.
+      *(validado na GUI pelo usuário)*
+- [x] Em locale en (ou outro), aparece em inglês. *(validado na GUI pelo usuário)*
 - [x] Nenhuma string de UI hardcoded fora dos arquivos de tradução. *(restam só
       códigos/dados: "CD"/"DVD"/"—"/"nobody" e o log de stderr — não-UI)*
 - [x] Teste garante que pt-BR e en-US têm o mesmo conjunto de chaves.
@@ -105,3 +105,4 @@ cai no `msgid`) e evita um `.po`/`.ftl` identidade para o inglês.
 |------|---------|--------|
 | 2026-06-29 | Plano criado (i18n híbrido aprovado) | `<pendente>` |
 | 2026-06-29 | Implementado: `@tr`/`.po` (Slint) + fluent `.ftl` (Rust), detecção de locale, paridade testada; CLAUDE.md §2 atualizado | `<pendente>` |
+| 2026-06-29 | Validação na GUI (usuário): en-US e pt-BR OK. **Bug de layout** achado: em pt-BR o botão inferior nascia cortado e só aparecia ao entrar/sair de Configurações. **Causa real:** a `ListView` é `vertical-stretch`, então a janela nasce com a `preferred-height` da `Window` (740px), não com a altura do conteúdo; o pt-BR (aviso de SMBv1 mais longo) excedia 740px e cortava o botão. (Primeira hipótese — catálogo carregando em background depois do show — descartada: carregar síncrono ANTES do `run()` não resolveu.) **Correção:** `preferred-height` 740→820px, dimensionada pelo idioma mais longo. O catálogo segue carregando síncrono no startup só para evitar o flash vazio→preenchido. Removido o `progress-reload-catalog`. Validado na GUI pelo usuário. | `<pendente>` |

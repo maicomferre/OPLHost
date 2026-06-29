@@ -138,17 +138,21 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_auth_enabled(restored.auth_required);
     apply_dir_hint(&ui);
 
-    // Se havia um diretório válido salvo, recarrega o catálogo dele em background
-    // (leitura de disco, sem Polkit) para a lista já aparecer preenchida.
+    // Se havia um diretório válido salvo, recarrega o catálogo dele AGORA, antes
+    // de `run()` (leitura de disco, sem Polkit). Síncrono de propósito: evita o
+    // flash de "catálogo vazio" → "preenchido" que um job de background causaria
+    // logo após o show. Para bibliotecas típicas a leitura é instantânea.
+    // (O dimensionamento da janela NÃO depende disto: a lista é `vertical-stretch`,
+    // então a janela nasce com a `preferred-height` do `.slint`, não com a altura
+    // do conteúdo — ver o comentário da janela em app.slint.)
     if let Some(dir) = restored.last_target_dir.filter(|d| d.is_dir()) {
-        spawn_job(&ui, &t("progress-reload-catalog"), move || {
-            let (rows, summary) = build_catalog(&dir);
-            UiUpdate {
-                rows: Some(rows),
-                summary: Some(summary),
-                ..Default::default()
-            }
-        });
+        let (rows, summary) = build_catalog(&dir);
+        UiUpdate {
+            rows: Some(rows),
+            summary: Some(summary),
+            ..Default::default()
+        }
+        .apply_to(&ui);
     }
 
     // Controle único do servidor: o mesmo botão ativa (apply) ou desativa

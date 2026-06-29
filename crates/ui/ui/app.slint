@@ -29,12 +29,18 @@ export component AppWindow inherits Window {
     // por isso o .desktop (Icon=oplhost) continua sendo necessário pós-instalação.
     icon: @image-url("../packaging/oplhost.png");
     preferred-width: 600px;
-    preferred-height: 740px;
+    // A lista do catálogo é `vertical-stretch` (sem altura natural fixa), então a
+    // janela nasce com ESTA `preferred-height` no primeiro show — não com o mínimo
+    // derivado do layout. Por isso ela precisa caber o conteúdo do IDIOMA MAIS
+    // LONGO (pt-BR, cujo aviso de SMBv1 quebra em mais linhas que o en-US): com
+    // 740px o botão inferior nascia cortado em pt-BR e só reaparecia ao entrar/sair
+    // de Configurações (que força um relayout e cresce a janela). Com folga, o
+    // botão e o aviso cabem já no primeiro show em ambos os idiomas.
+    preferred-height: 820px;
     min-width: 520px;
-    // Sem min-height explícito de propósito: o Slint deriva o mínimo da janela
-    // do layout (lista no seu `min-height` + tudo que é fixo). Como a área de
-    // status tem altura reservada (não é condicional), esse mínimo é constante
-    // e SEMPRE cabe o aviso de SMBv1 e o botão — nunca são cortados.
+    // Sem min-height explícito de propósito: o Slint deriva o mínimo da janela do
+    // layout (lista no seu `min-height` + tudo que é fixo); ao redimensionar à mão
+    // a lista encolhe primeiro, preservando aviso e botão.
 
     // Dinâmicas (preenchidas pelo binário via fluent) → default "".
     in property <string> status-text: "";
