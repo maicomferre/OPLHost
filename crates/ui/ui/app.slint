@@ -1,4 +1,4 @@
-import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit, ListView, CheckBox } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit, ListView, CheckBox, TextEdit } from "std-widgets.slint";
 
 // Uma linha do catálogo rico. Preenchida pelo binário (raiz de composição) a
 // partir do `GameMeta` do core; campos já formatados para exibição.
@@ -7,6 +7,9 @@ struct GameRow {
     game-id: string,
     media: string,
     size: string,
+    // Nome do arquivo da ISO — exibido no editor de metadados (o `title` pode ser
+    // um título derivado/sobrescrito, então guardamos o arquivo cru à parte).
+    file-name: string,
 }
 
 // Janela funcional: seleção do diretório-alvo, status do servidor, IP/instruções
@@ -45,6 +48,29 @@ export component AppWindow inherits Window {
     in property <bool> server-active: false;
     // Painel de Configurações sobreposto à tela principal (gear no cabeçalho).
     in-out property <bool> show-settings: false;
+
+    // ----- Editor de metadados do jogo (overlay in-place, como o de Settings) -----
+    // Aberto ao clicar numa linha do catálogo; grava em CFG/<GameID>.cfg (info do
+    // OPL). Não reflui a tela principal — a substitui enquanto aberto.
+    in-out property <bool> show-game-editor: false;
+    // Índice da linha clicada (para o binário atualizar o título após salvar).
+    in-out property <int> editor-index: -1;
+    // Cabeçalho do editor: identidade do jogo (read-only).
+    in property <image> editor-cover;
+    in property <bool> editor-has-cover: false;
+    in property <string> editor-file-name: "";
+    in property <string> editor-game-id: "";
+    in property <string> editor-media: "";
+    // Sem Game ID o OPL não tem como nomear o .cfg → editor abre só-leitura.
+    in property <bool> editor-can-edit: false;
+    // Aviso contextual do editor (sem Game ID, limite de caracteres etc.).
+    in property <string> editor-note: "";
+    // Campos editáveis (espelham as 5 chaves de info do OPL).
+    in-out property <string> field-title: "";
+    in-out property <string> field-genre: "";
+    in-out property <string> field-release: "";
+    in-out property <string> field-developer: "";
+    in-out property <string> field-description: "";
     // Dica contextual sobre o diretório-alvo (estrutura existente, subpasta etc.).
     in property <string> dir-hint: "A estrutura de pastas do OPL (CD, DVD, ART…) é criada aqui se ainda não existir.";
     in property <bool> dir-hint-warning: false;
@@ -57,6 +83,10 @@ export component AppWindow inherits Window {
     callback choose-dir-clicked();
     callback download-art-clicked();
     callback dir-path-edited();
+    // Clique numa linha do catálogo (índice) → o binário carrega o info e abre o editor.
+    callback game-clicked(int);
+    // Salvar os metadados editados no CFG/<GameID>.cfg do jogo selecionado.
+    callback save-game-info-clicked();
 
     VerticalBox {
         padding: 12px;
@@ -66,13 +96,15 @@ export component AppWindow inherits Window {
         HorizontalBox {
             spacing: 8px;
             Text {
-                text: root.show-settings ? "Configurações" : "oplhost";
+                text: root.show-game-editor ? "Editar metadados"
+                    : root.show-settings ? "Configurações" : "oplhost";
                 font-size: 24px;
                 font-weight: 700;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
             }
-            Button {
+            // O gear some no editor (que tem seus próprios botões Cancelar/Salvar).
+            if !root.show-game-editor: Button {
                 text: root.show-settings ? "← Voltar" : "⚙ Configurações";
                 enabled: !root.busy;
                 clicked => { root.show-settings = !root.show-settings; }
@@ -80,7 +112,7 @@ export component AppWindow inherits Window {
         }
 
         // ===================== TELA PRINCIPAL =====================
-        if !root.show-settings: VerticalLayout {
+        if !root.show-settings && !root.show-game-editor: VerticalLayout {
             vertical-stretch: 1;
             spacing: 10px;
 
@@ -127,12 +159,23 @@ export component AppWindow inherits Window {
                         text: root.catalog-summary;
                         font-weight: 600;
                     }
+                    if root.catalog-rows.length > 0: Text {
+                        text: "Clique num jogo para editar os metadados (tela Informações do OPL).";
+                        font-size: 12px;
+                        color: #888;
+                    }
                     ListView {
                         min-height: 80px;
                         vertical-stretch: 1;
                         for row[idx] in root.catalog-rows: Rectangle {
                             height: 26px;
-                            background: Math.mod(idx, 2) == 0 ? transparent : #00000008;
+                            background: touch.has-hover ? #00000014
+                                : Math.mod(idx, 2) == 0 ? transparent : #00000008;
+                            // Clicar na linha abre o editor de metadados do jogo.
+                            touch := TouchArea {
+                                enabled: !root.busy;
+                                clicked => { root.game-clicked(idx); }
+                            }
                             HorizontalBox {
                                 padding-left: 6px;
                                 // Gutter à direita pro scrollbar nativo do ListView
@@ -262,6 +305,153 @@ export component AppWindow inherits Window {
 
             // Empurra o conteúdo das Configurações para o topo.
             Rectangle { vertical-stretch: 1; }
+        }
+
+        // ===================== EDITOR DE METADADOS =====================
+        // Grava os 5 campos que o OPL exibe na tela "Informações" em
+        // CFG/<GameID>.cfg (preservando configs de compatibilidade do jogo).
+        if root.show-game-editor: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 10px;
+
+            GroupBox {
+                title: "Jogo";
+                HorizontalBox {
+                    spacing: 12px;
+                    alignment: start;
+                    if root.editor-has-cover: Image {
+                        source: root.editor-cover;
+                        width: 90px;
+                        height: 128px;
+                        image-fit: contain;
+                    }
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 4px;
+                        Text {
+                            text: root.editor-file-name;
+                            font-weight: 600;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "Game ID: " + (root.editor-game-id == "" ? "—" : root.editor-game-id);
+                            font-size: 12px;
+                            color: #888;
+                        }
+                        Text {
+                            text: "Mídia: " + root.editor-media;
+                            font-size: 12px;
+                            color: #888;
+                        }
+                    }
+                }
+            }
+
+            if root.editor-can-edit: GroupBox {
+                title: "Informações (exibidas no OPL)";
+                vertical-stretch: 1;
+                VerticalBox {
+                    spacing: 6px;
+                    Text {
+                        text: "Título";
+                        font-size: 12px;
+                        color: #888;
+                    }
+                    LineEdit {
+                        placeholder-text: "Sobrescreve o nome exibido no OPL";
+                        text <=> root.field-title;
+                        enabled: !root.busy;
+                    }
+                    Text {
+                        text: "Gênero";
+                        font-size: 12px;
+                        color: #888;
+                    }
+                    LineEdit {
+                        text <=> root.field-genre;
+                        enabled: !root.busy;
+                    }
+                    Text {
+                        text: "Lançamento";
+                        font-size: 12px;
+                        color: #888;
+                    }
+                    LineEdit {
+                        placeholder-text: "ex.: 2005-03-22";
+                        text <=> root.field-release;
+                        enabled: !root.busy;
+                    }
+                    Text {
+                        text: "Desenvolvedor";
+                        font-size: 12px;
+                        color: #888;
+                    }
+                    LineEdit {
+                        text <=> root.field-developer;
+                        enabled: !root.busy;
+                    }
+                    Text {
+                        text: "Descrição";
+                        font-size: 12px;
+                        color: #888;
+                    }
+                    TextEdit {
+                        text <=> root.field-description;
+                        enabled: !root.busy;
+                        wrap: word-wrap;
+                        min-height: 64px;
+                        vertical-stretch: 1;
+                    }
+                    Text {
+                        text: "Cada campo aceita até 255 caracteres (limite do OPL). "
+                            + "Campo vazio remove o dado do jogo.";
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        color: #888;
+                    }
+                }
+            }
+
+            if !root.editor-can-edit: GroupBox {
+                title: "Informações";
+                vertical-stretch: 1;
+                Text {
+                    text: "Este jogo não tem um Game ID legível, então o OPL não "
+                        + "consegue casar um arquivo de metadados (CFG/<GameID>.cfg). "
+                        + "A edição fica indisponível para ele.";
+                    wrap: word-wrap;
+                    color: #b58900;
+                }
+            }
+
+            // Aviso/erro do editor (limite estourado, sem Game ID, falha ao salvar).
+            Rectangle {
+                height: 20px;
+                Text {
+                    width: 100%;
+                    text: root.editor-note;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    color: #d33682;
+                }
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+                Button {
+                    text: "← Cancelar";
+                    enabled: !root.busy;
+                    clicked => { root.show-game-editor = false; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: "Salvar metadados";
+                    primary: true;
+                    enabled: !root.busy && root.editor-can-edit;
+                    clicked => { root.save-game-info-clicked(); }
+                }
+            }
         }
     }
 }

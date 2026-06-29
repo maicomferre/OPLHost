@@ -8,6 +8,7 @@
 pub mod catalog;
 pub mod domain;
 pub mod game_id;
+pub mod game_info;
 pub mod iso9660;
 pub mod meta;
 pub mod opl_layout;
@@ -17,6 +18,10 @@ pub mod settings;
 pub use catalog::{CatalogSummary, GameEntry, Media, is_game_image_name, summarize};
 pub use domain::{BackendError, ServerStatus, ShareAuth, ShareConfig};
 pub use game_id::{GameId, derive_title, parse_boot2_game_id};
+pub use game_info::{
+    FieldError, FieldErrorKind, GameCfg, GameInfo, GameInfoError, GameInfoStore, OPL_VALUE_MAX_LEN,
+    cfg_file_name,
+};
 pub use meta::{GameMeta, MediaKind, MetaError, MetaStore, OplMeta};
 pub use opl_layout::{create_opl_layout, is_opl_subdir_name};
 pub use ports::{Fs, StorageBackend};
