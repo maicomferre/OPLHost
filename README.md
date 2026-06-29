@@ -4,7 +4,7 @@ Servidor SMB dedicado ao Open PS2 Loader (OPL), para Linux.
 
 O `oplhost` é uma aplicação gráfica que automatiza a criação e o gerenciamento de
 um servidor Samba (SMB) compatível com o Open PS2 Loader. O objetivo não é
-gerenciar jogos — já existem ferramentas para isso — e sim **eliminar a dor de
+gerenciar jogos — já existem ferramentas para isso — e sim **eliminar a dificuldade de
 configurar manualmente um compartilhamento SMB que o OPL aceite**, com firewall e
 privilégios resolvidos, sem editar arquivos de sistema à mão.
 
@@ -49,15 +49,6 @@ pedindo a senha uma única vez.
 - **Ambientes gráficos:** GNOME, Cinnamon, MATE e XFCE, em Wayland (alvo
   primário) ou X11.
 - **Plataforma:** Linux exclusivamente.
-
-## Requisitos de sistema
-
-Dependências de runtime (o pacote `.deb` as declara e o instalador as resolve):
-
-- `samba` — o daemon `smbd` que serve o compartilhamento.
-- `polkit` (`pkexec` / `policykit-1`) — para as operações privilegiadas.
-- `zenity` ou `kdialog` — para o seletor nativo de pasta.
-- `ufw` ou `iptables` — para a regra de firewall (tratados dinamicamente).
 
 ## Instalação
 
