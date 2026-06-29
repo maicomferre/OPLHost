@@ -70,6 +70,7 @@ Estudo de `ps2homebrew/Open-PS2-Loader@master` (CLAUDE.md §7/§12):
 | 2026-06-29 | Campo vazio na UI = chave **removida** do `.cfg` (não `Chave=`) | Mantém o arquivo limpo e o OPL cai no comportamento padrão (nome derivado) | Gravar `Chave=` vazio (polui o arquivo; ambíguo) |
 | 2026-06-29 | Editor é overlay in-place (como o painel de Settings), não nova janela | Pedido explícito do usuário; consistente com o padrão atual | Janela separada (quebra o padrão; mais código de janela) |
 | 2026-06-29 | Jogo sem Game ID → editor read-only explicando | Sem `GameID` não há nome de `.cfg` p/ o OPL casar | Derivar ID na hora (fora de escopo; já há "Baixar capas" lendo ISO) |
+| 2026-06-29 | Sanitizar o campo Lançamento: canonizar data p/ AAAA-MM-DD, barrar data-like inválida, deixar texto livre passar | O OPL exibe `Release` **verbatim** (não parseia — `src/themes.c` só mapeia o rótulo), então não quebra; mas o usuário pediu evitar gravar "data" sem sentido (ex.: `2007-03-132`). Heurística: só-dígitos+separadores = tentativa de data (valida/canoniza); com letras = texto livre (ano por extenso etc.) | Validação estrita rejeitando tudo que não seja AAAA-MM-DD (hostil: muitos só sabem o ano); nenhuma sanitização (deixaria gravar lixo) |
 
 ## A validar no ambiente
 
@@ -142,4 +143,5 @@ Estudo de `ps2homebrew/Open-PS2-Loader@master` (CLAUDE.md §7/§12):
 | Data | Mudança | Commit |
 |------|---------|--------|
 | 2026-06-29 | Plano criado; formato do OPL (`CFG/<id>.cfg`, 5 chaves) validado na fonte | `<pendente>` |
-| 2026-06-29 | `game_info.rs` (core) + `FsGameInfoStore` (infra) + editor in-place na UI; 16 testes novos, clippy/fmt limpos | `<pendente>` |
+| 2026-06-29 | `game_info.rs` (core) + `FsGameInfoStore` (infra) + editor in-place na UI; 16 testes novos, clippy/fmt limpos | `85d60a2` |
+| 2026-06-29 | Sanitização do Lançamento (`normalize_release`): canoniza/valida data, +7 testes | `<pendente>` |

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use oplhost_core::{
     AppSettings, GameId, GameInfo, GameInfoStore, GameMeta, MediaKind, MetaStore, OplMeta,
     SETTINGS_VERSION, ServerStatus, SettingsStore, ShareAuth, ShareConfig, StorageBackend,
-    create_opl_layout, derive_title, is_opl_subdir_name, summarize,
+    create_opl_layout, derive_title, is_opl_subdir_name, normalize_release, summarize,
 };
 use oplhost_infra::{
     ArtProvider, FsGameInfoStore, FsSettingsStore, JsonMetaStore, RealFs, SmbBackend, dialog, iso,
@@ -508,10 +508,23 @@ fn handle_save_game_info(ui: &AppWindow) {
         return;
     };
 
+    // O Lançamento é sanitizado: data-like inválida (ex.: 2007-03-132) é barrada
+    // aqui com uma dica; data válida é canonizada para AAAA-MM-DD; texto livre
+    // passa (o OPL exibe verbatim). Os demais campos são texto livre.
+    let release = match normalize_release(ui.get_field_release().as_str()) {
+        Ok(r) => r,
+        Err(e) => {
+            ui.set_editor_note(e.to_string().into());
+            return;
+        }
+    };
+    // Reflete a forma canônica de volta no campo (ex.: 24/06/2007 → 2007-06-24).
+    ui.set_field_release(release.clone().unwrap_or_default().into());
+
     let info = GameInfo {
         title: non_empty(ui.get_field_title().as_str()),
         genre: non_empty(ui.get_field_genre().as_str()),
-        release: non_empty(ui.get_field_release().as_str()),
+        release,
         developer: non_empty(ui.get_field_developer().as_str()),
         description: non_empty(ui.get_field_description().as_str()),
     };
