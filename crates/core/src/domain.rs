@@ -3,12 +3,36 @@
 use std::path::PathBuf;
 
 /// Estado observável do servidor de storage (qualquer backend).
+///
+/// O significado é "**o catálogo do OPL está sendo servido?**", derivado do que
+/// cada backend considera "config aplicada" — não do estado de um daemon global.
+/// No `SmbBackend`, `Running` = o share isolado existe e está incluído no Samba;
+/// `Stopped` = config ausente. Um futuro `UdpbdBackend` mapeará para o seu
+/// próprio processo. A UI traduz para "Ativo/Inativo".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerStatus {
+    /// Config aplicada — o catálogo do OPL está sendo servido.
     Running,
+    /// Config ausente — nada sendo servido pelo app.
     Stopped,
     /// Estado de falha com mensagem orientando a resolução (UX §8 do CLAUDE.md).
     Error(String),
+}
+
+/// Modo de acesso ao share.
+///
+/// `Guest` (anônimo) é o **padrão** — é como o OPL conecta out-of-the-box e o
+/// que a Fase 0 validou. `User` exige autenticação Samba. **A senha NÃO vive
+/// aqui:** ela é transitória (usada só no `smbpasswd` durante o apply) e nunca
+/// deve ser serializada nem logada — este tipo guarda apenas o modo e o nome de
+/// usuário. Genérico o bastante para um backend sem auth (UDPBD, §7.1) ignorar.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ShareAuth {
+    /// Acesso livre (guest/anônimo). Padrão.
+    #[default]
+    Guest,
+    /// Acesso autenticado por um usuário Samba existente no sistema.
+    User { username: String },
 }
 
 /// Configuração de um share/servidor, independente de backend.
@@ -26,6 +50,8 @@ pub struct ShareConfig {
     pub port: u16,
     /// Usuário dono da pasta, usado em `force user` no backend SMB.
     pub owner_user: String,
+    /// Modo de acesso: guest (padrão) ou autenticado por usuário/senha.
+    pub auth: ShareAuth,
 }
 
 /// Erro de operação de um `StorageBackend`. Mensagens devem ser descritivas o

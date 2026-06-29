@@ -8,7 +8,7 @@
 //! O esqueleto do `opl_share.conf` é o validado na Fase 0 (Samba 4.23.6, NT1
 //! guest lê/escreve). Ver `plans/fase-0-spike.md`.
 
-use oplhost_core::ShareConfig;
+use oplhost_core::{ShareAuth, ShareConfig};
 
 use crate::firewall::{FirewallManager, Protocol};
 
@@ -46,12 +46,23 @@ const MARKER: &str = "# oplhost";
 /// Esqueleto validado na Fase 0. Avisos de "weak crypto"/"lanman deprecated" do
 /// Samba são esperados — é o trade-off do OPL (§0). `smb ports` só aparece em
 /// porta não-padrão para não alterar o comportamento default do daemon.
+///
+/// O bloco de acesso do share ramifica pelo `cfg.auth`: por padrão `guest ok =
+/// yes` (acesso livre, como o OPL espera); no modo autenticado, `guest ok = no`
+/// com `valid users = <user>` exige usuário/senha. `force user` permanece nos
+/// dois casos para que toda escrita pertença ao dono da pasta.
 pub fn build_smb_conf(cfg: &ShareConfig) -> String {
     let path = cfg.target_dir.display();
     let smb_ports = if cfg.port == 445 {
         String::new()
     } else {
         format!("   smb ports = {}\n", cfg.port)
+    };
+    let access = match &cfg.auth {
+        ShareAuth::Guest => "\x20  guest ok = yes\n".to_string(),
+        ShareAuth::User { username } => {
+            format!("\x20  guest ok = no\n\x20  valid users = {username}\n")
+        }
     };
     format!(
         "[global]\n\
@@ -65,7 +76,7 @@ pub fn build_smb_conf(cfg: &ShareConfig) -> String {
          [{share}]\n\
          \x20  comment = OPL Share\n\
          \x20  path = {path}\n\
-         \x20  guest ok = yes\n\
+         {access}\
          \x20  read only = no\n\
          \x20  browseable = yes\n\
          \x20  force user = {user}\n",
@@ -74,43 +85,109 @@ pub fn build_smb_conf(cfg: &ShareConfig) -> String {
     )
 }
 
-/// Corpo do script root de APPLY: grava o conf isolado, injeta o include de
-/// forma idempotente, reinicia o `smbd` e abre a porta no firewall. Tudo numa
-/// única janela de privilégio quando entregue ao `PrivilegeEscalator`.
-pub fn build_apply_script(paths: &SmbPaths, cfg: &ShareConfig) -> String {
+/// Aspas simples seguras para shell: envolve em `'…'` e escapa aspas simples
+/// internas como `'\''`. Usado para interpolar usuário/senha no script root sem
+/// risco de injeção.
+fn sh_squote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Fragmento root que cria/atualiza o usuário Samba do share autenticado.
+///
+/// Vazio no modo guest (ou sem senha). No modo `User`: guarda contra usuário do
+/// sistema inexistente (não criamos contas — abortamos com mensagem clara) e
+/// define a senha Samba via `smbpasswd -s -a`, lendo a senha do stdin (nunca em
+/// argv, que vazaria no `ps`).
+fn build_auth_fragment(cfg: &ShareConfig, password: Option<&str>) -> String {
+    match (&cfg.auth, password) {
+        (ShareAuth::User { username }, Some(pw)) => {
+            let u = sh_squote(username);
+            let p = sh_squote(pw);
+            format!(
+                "if ! id -u {u} >/dev/null 2>&1; then\n\
+                 \x20 echo 'usuario do sistema inexistente para o share autenticado' >&2\n\
+                 \x20 exit 1\n\
+                 fi\n\
+                 printf '%s\\n%s\\n' {p} {p} | smbpasswd -s -a {u}\n\
+                 \n"
+            )
+        }
+        _ => String::new(),
+    }
+}
+
+/// Corpo do script root de APPLY: grava o conf isolado (com `chmod 644`
+/// explícito), injeta o include de forma idempotente, (opcionalmente) cria o
+/// usuário Samba, **recarrega** o `smbd` e abre a porta no firewall. Tudo numa
+/// única janela de privilégio quando entregue ao `PrivilegeEscalator`. `password`
+/// só é usado no modo autenticado.
+///
+/// O `chmod 644` é deliberado: o `status()` lê o `opl_share.conf` **sem root**
+/// (assume world-readable). Sem ele, a permissão dependeria do umask do `pkexec`
+/// — em campo (2026-06-28) saiu `664` com umask 002, e poderia sair `600` em
+/// outro ambiente, quebrando o status. Fixar 0644 torna o comportamento
+/// determinístico (CLAUDE.md §12: não assumir valores do ambiente).
+///
+/// Usa `systemctl reload smbd` (não `restart`): recarregar aplica o novo share
+/// sem derrubar conexões nem interromper outros usos do Samba na máquina (§0;
+/// decisão 2026-06-27). Pressupõe que o `smbd` já é gerenciado pelo sistema — o
+/// app não controla o ciclo de vida do daemon global. **A validar no ambiente:**
+/// se mudanças no bloco `[global]` (protocolo NT1) exigirem mais que um reload
+/// em alguma versão do Samba, reavaliar.
+pub fn build_apply_script(paths: &SmbPaths, cfg: &ShareConfig, password: Option<&str>) -> String {
     let conf = build_smb_conf(cfg);
     let include = paths.include_line();
     let firewall = FirewallManager.open_fragment(cfg.port, Protocol::Tcp);
+    let auth = build_auth_fragment(cfg, password);
     let share_conf = &paths.share_conf;
     let smb_conf = &paths.smb_conf;
 
     format!(
         "cat > {share_conf} <<'OPLEOF'\n{conf}OPLEOF\n\
+         chmod 644 {share_conf}\n\
          \n\
          if ! grep -qxF '{include}' {smb_conf}; then\n\
          \x20 printf '\\n{MARKER}\\n{include}\\n' >> {smb_conf}\n\
          fi\n\
          \n\
-         systemctl restart smbd\n\
+         {auth}\
+         systemctl reload smbd\n\
          \n\
          {firewall}\n"
     )
 }
 
 /// Corpo do script root de ROLLBACK: remove o conf isolado, tira a linha de
-/// include e o marcador, reinicia o `smbd` e fecha a porta. Rollback completo
-/// (§0): o sistema volta ao estado anterior sem vestígios do app.
+/// include e o marcador, **recarrega** o `smbd` e fecha a porta. Rollback
+/// completo (§0): o sistema volta ao estado anterior sem vestígios do app.
 pub fn build_rollback_script(paths: &SmbPaths, cfg: &ShareConfig) -> String {
     let include = paths.include_line();
     let firewall = FirewallManager.close_fragment(cfg.port, Protocol::Tcp);
     let share_conf = &paths.share_conf;
     let smb_conf = &paths.smb_conf;
+    // No modo autenticado, remove a entrada Samba que o apply criou (§0: sem
+    // vestígios). `|| true`: a conta pode já ter sido removida; não falhar o rollback.
+    let deauth = match &cfg.auth {
+        ShareAuth::User { username } => format!("smbpasswd -x {} || true\n", sh_squote(username)),
+        ShareAuth::Guest => String::new(),
+    };
 
     format!(
         "rm -f {share_conf}\n\
          sed -i '\\#{include}#d' {smb_conf}\n\
          sed -i '/{MARKER}/d' {smb_conf}\n\
-         systemctl restart smbd\n\
+         {deauth}\
+         systemctl reload smbd\n\
          \n\
          {firewall}\n"
     )
@@ -127,6 +204,16 @@ mod tests {
             share_name: "PS2SMB".to_string(),
             port: 445,
             owner_user: "maicom".to_string(),
+            auth: ShareAuth::Guest,
+        }
+    }
+
+    fn auth_cfg() -> ShareConfig {
+        ShareConfig {
+            auth: ShareAuth::User {
+                username: "maicom".to_string(),
+            },
+            ..cfg()
         }
     }
 
@@ -140,6 +227,17 @@ mod tests {
         assert!(c.contains("path = /mnt/ps2games"));
         assert!(c.contains("force user = maicom"));
         assert!(c.contains("guest ok = yes"));
+        assert!(!c.contains("valid users"));
+    }
+
+    #[test]
+    fn conf_autenticado_exige_usuario_e_nega_guest() {
+        let c = build_smb_conf(&auth_cfg());
+        assert!(c.contains("guest ok = no"));
+        assert!(c.contains("valid users = maicom"));
+        // força usuário continua, garantindo a posse dos arquivos
+        assert!(c.contains("force user = maicom"));
+        assert!(!c.contains("guest ok = yes"));
     }
 
     #[test]
@@ -156,24 +254,73 @@ mod tests {
     }
 
     #[test]
-    fn apply_injeta_include_idempotente_e_reinicia_smbd() {
-        let s = build_apply_script(&SmbPaths::default(), &cfg());
+    fn apply_injeta_include_idempotente_e_recarrega_smbd() {
+        let s = build_apply_script(&SmbPaths::default(), &cfg(), None);
         // heredoc grava o conf isolado
         assert!(s.contains("cat > /etc/samba/opl_share.conf <<'OPLEOF'"));
+        // 0644 explícito: o status() lê o conf sem root; não depender do umask
+        // do pkexec (visto 664 com umask 002 em campo).
+        assert!(s.contains("chmod 644 /etc/samba/opl_share.conf"));
         // include idempotente: só anexa se ainda não existe
         assert!(s.contains("grep -qxF 'include = /etc/samba/opl_share.conf' /etc/samba/smb.conf"));
-        assert!(s.contains("systemctl restart smbd"));
+        // reload (não restart): não derruba conexões nem outros usos do Samba
+        assert!(s.contains("systemctl reload smbd"));
+        assert!(!s.contains("systemctl restart smbd"));
         // firewall na mesma janela
         assert!(s.contains("ufw allow 445/tcp"));
+    }
+
+    #[test]
+    fn apply_guest_nao_mexe_em_smbpasswd() {
+        let s = build_apply_script(&SmbPaths::default(), &cfg(), Some("ignorada"));
+        assert!(!s.contains("smbpasswd"));
+    }
+
+    #[test]
+    fn apply_autenticado_cria_usuario_samba_na_mesma_janela() {
+        let s = build_apply_script(&SmbPaths::default(), &auth_cfg(), Some("s3nha"));
+        // guarda contra usuário do sistema inexistente
+        assert!(s.contains("id -u 'maicom'"));
+        // senha vai pelo stdin (não em argv) e antes do restart
+        assert!(s.contains("printf '%s\\n%s\\n' 's3nha' 's3nha' | smbpasswd -s -a 'maicom'"));
+        let smbpasswd_at = s.find("smbpasswd -s -a").unwrap();
+        let reload_at = s.find("systemctl reload smbd").unwrap();
+        assert!(
+            smbpasswd_at < reload_at,
+            "usuário criado antes de recarregar o smbd"
+        );
+    }
+
+    #[test]
+    fn apply_autenticado_sem_senha_nao_emite_smbpasswd() {
+        // segurança: sem senha, não tentamos criar o usuário (evita prompt travado)
+        let s = build_apply_script(&SmbPaths::default(), &auth_cfg(), None);
+        assert!(!s.contains("smbpasswd"));
+    }
+
+    #[test]
+    fn senha_com_aspas_simples_e_escapada_para_o_shell() {
+        let s = build_apply_script(&SmbPaths::default(), &auth_cfg(), Some("a'b"));
+        assert!(s.contains(r"'a'\''b'"));
     }
 
     #[test]
     fn rollback_remove_conf_include_e_marcador() {
         let s = build_rollback_script(&SmbPaths::default(), &cfg());
         assert!(s.contains("rm -f /etc/samba/opl_share.conf"));
-        assert!(s.contains("sed -i '\\#include = /etc/samba/opl_share.conf#d' /etc/samba/smb.conf"));
+        assert!(
+            s.contains("sed -i '\\#include = /etc/samba/opl_share.conf#d' /etc/samba/smb.conf")
+        );
         assert!(s.contains("# oplhost"));
-        assert!(s.contains("systemctl restart smbd"));
+        assert!(s.contains("systemctl reload smbd"));
         assert!(s.contains("ufw delete allow 445/tcp || true"));
+        // modo guest não mexe em conta Samba
+        assert!(!s.contains("smbpasswd"));
+    }
+
+    #[test]
+    fn rollback_autenticado_remove_a_conta_samba() {
+        let s = build_rollback_script(&SmbPaths::default(), &auth_cfg());
+        assert!(s.contains("smbpasswd -x 'maicom' || true"));
     }
 }

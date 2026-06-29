@@ -8,11 +8,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::{summarize, CatalogSummary, GameEntry, Media};
+use crate::catalog::{CatalogSummary, GameEntry, Media, summarize};
+use crate::game_id::{GameId, derive_title};
 
 /// Versão do schema do `opl_meta.json`. Permite migração futura sem quebrar
-/// arquivos antigos quando o cache ganhar campos (ano, art, etc. na Fase 2).
-pub const META_VERSION: u32 = 1;
+/// arquivos antigos. v2 (Fase 2) acrescentou `game_id` e `title`; os campos têm
+/// `#[serde(default)]` para que um cache v1 ainda carregue (§6) — o app só
+/// reenriquece relendo as ISOs.
+pub const META_VERSION: u32 = 2;
 
 /// Mídia serializável para o cache. Espelha `catalog::Media`, mas com derives de
 /// serde — o `catalog` permanece livre de dependências de serialização.
@@ -32,22 +35,43 @@ impl From<Media> for MediaKind {
     }
 }
 
-/// Entrada de um jogo no cache. Campos ricos (título, ano, art) chegam na Fase
-/// 2; aqui basta o suficiente para reexibir o catálogo sem reescanear o disco.
+/// Entrada de um jogo no cache. Guarda o suficiente para reexibir o catálogo
+/// rico sem reabrir as ISOs: nome de arquivo, tamanho, mídia, o Game ID (quando
+/// já extraído da ISO) e um título legível derivado do nome.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GameMeta {
     pub file_name: String,
     pub size_bytes: u64,
     pub media: MediaKind,
+    /// Game ID lido do `SYSTEM.CNF`. `None` enquanto não foi extraído (cache v1
+    /// antigo ou ISO ainda não lida) — a UI mostra "desconhecido".
+    #[serde(default)]
+    pub game_id: Option<GameId>,
+    /// Título legível para exibição, derivado do nome do arquivo.
+    #[serde(default)]
+    pub title: String,
+}
+
+impl GameMeta {
+    /// Monta a entrada do cache a partir da varredura do disco, opcionalmente já
+    /// com o Game ID lido da ISO pela infraestrutura. O título é derivado do
+    /// nome do arquivo (convenção do OPL).
+    pub fn from_entry(entry: &GameEntry, game_id: Option<GameId>) -> Self {
+        Self {
+            file_name: entry.file_name.clone(),
+            size_bytes: entry.size_bytes,
+            media: entry.media().into(),
+            game_id,
+            title: derive_title(&entry.file_name),
+        }
+    }
 }
 
 impl From<&GameEntry> for GameMeta {
+    /// Conversão pura (sem ISO): título derivado, Game ID desconhecido. O `core`
+    /// não lê disco; a infraestrutura enriquece com o Game ID depois.
     fn from(e: &GameEntry) -> Self {
-        Self {
-            file_name: e.file_name.clone(),
-            size_bytes: e.size_bytes,
-            media: e.media().into(),
-        }
+        Self::from_entry(e, None)
     }
 }
 
@@ -74,6 +98,15 @@ impl OplMeta {
         Self {
             version: META_VERSION,
             games: entries.iter().map(GameMeta::from).collect(),
+        }
+    }
+
+    /// Monta o cache a partir de entradas já enriquecidas (com Game ID lido da
+    /// ISO pela infraestrutura). Usado pela UI ao listar o catálogo rico.
+    pub fn from_games(games: Vec<GameMeta>) -> Self {
+        Self {
+            version: META_VERSION,
+            games,
         }
     }
 
@@ -181,5 +214,62 @@ mod tests {
     fn media_serializa_em_maiusculas() {
         let json = serde_json::to_string(&MediaKind::Dvd).unwrap();
         assert_eq!(json, "\"DVD\"");
+    }
+
+    #[test]
+    fn from_entry_deriva_titulo_e_guarda_game_id() {
+        let entry = GameEntry {
+            file_name: "SLUS_200.02.God of War.iso".into(),
+            size_bytes: 4 * 1024 * 1024 * 1024,
+        };
+        let id = GameId::parse("SLUS_200.02");
+        let meta = GameMeta::from_entry(&entry, id.clone());
+        assert_eq!(meta.title, "God of War");
+        assert_eq!(meta.game_id, id);
+        assert_eq!(meta.media, MediaKind::Dvd);
+    }
+
+    #[test]
+    fn from_entry_sem_id_deixa_game_id_none_mas_deriva_titulo() {
+        let entry = GameEntry {
+            file_name: "Ico.iso".into(),
+            size_bytes: 100,
+        };
+        let meta = GameMeta::from(&entry);
+        assert_eq!(meta.game_id, None);
+        assert_eq!(meta.title, "Ico");
+    }
+
+    #[test]
+    fn cache_v1_sem_campos_novos_ainda_carrega() {
+        // Um opl_meta.json gravado na Fase 1 (sem game_id/title) deve carregar,
+        // honrando o §6 — os campos caem no default.
+        let json = r#"{"version":1,"games":[
+            {"file_name":"a.iso","size_bytes":100,"media":"CD"}
+        ]}"#;
+        let meta: OplMeta = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.games.len(), 1);
+        assert_eq!(meta.games[0].game_id, None);
+        assert_eq!(meta.games[0].title, "");
+    }
+
+    #[test]
+    fn roundtrip_json_preserva_id_e_titulo() {
+        let entry = GameEntry {
+            file_name: "SCUS_973.13.Gran Turismo 4.iso".into(),
+            size_bytes: 4 * 1024 * 1024 * 1024,
+        };
+        let meta = OplMeta {
+            version: META_VERSION,
+            games: vec![GameMeta::from_entry(&entry, GameId::parse("SCUS_973.13"))],
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let voltou: OplMeta = serde_json::from_str(&json).unwrap();
+        assert_eq!(meta, voltou);
+        assert_eq!(voltou.games[0].title, "Gran Turismo 4");
+        assert_eq!(
+            voltou.games[0].game_id.as_ref().unwrap().as_str(),
+            "SCUS_973.13"
+        );
     }
 }

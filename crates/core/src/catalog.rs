@@ -9,6 +9,26 @@
 /// 700 MB é a convenção do projeto (§4 do CLAUDE.md).
 pub const CD_MAX_BYTES: u64 = 700 * 1024 * 1024;
 
+/// Extensões de imagem de jogo que o OPL carrega de `CD/`/`DVD/`. `iso` é o
+/// formato cru; `zso` é a imagem comprimida (ziso) que o OPL/BDM lê. (`validar`:
+/// se algum setup usar outra extensão, ex. `cso`, acrescentar aqui.)
+const GAME_IMAGE_EXTS: [&str; 2] = ["iso", "zso"];
+
+/// `true` se o nome de arquivo tem extensão de imagem de jogo do OPL
+/// (case-insensitive). Serve para a varredura **ignorar lixo** que não é jogo —
+/// ex.: um arquivo solto chamado `games` (sem extensão) que aparecia no catálogo
+/// como "— 0 MB, sem Game ID". Regra de domínio: o que conta como jogo é decisão
+/// do `core`, não da infraestrutura.
+pub fn is_game_image_name(file_name: &str) -> bool {
+    match file_name.rsplit_once('.') {
+        // stem vazio (ex.: ".iso") é arquivo oculto sem nome real → não é jogo.
+        Some((stem, ext)) if !stem.is_empty() => {
+            GAME_IMAGE_EXTS.iter().any(|e| ext.eq_ignore_ascii_case(e))
+        }
+        _ => false,
+    }
+}
+
 /// Mídia em que uma ISO é categorizada para o OPL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Media {
@@ -109,9 +129,9 @@ mod tests {
     #[test]
     fn summarize_conta_e_soma_por_midia() {
         let entries = vec![
-            iso("a.iso", 100 * 1024 * 1024),        // CD
-            iso("b.iso", CD_MAX_BYTES),             // CD (borda)
-            iso("c.iso", 4 * 1024 * 1024 * 1024),   // DVD
+            iso("a.iso", 100 * 1024 * 1024),      // CD
+            iso("b.iso", CD_MAX_BYTES),           // CD (borda)
+            iso("c.iso", 4 * 1024 * 1024 * 1024), // DVD
         ];
         let s = summarize(&entries);
         assert_eq!(s.cd_count, 2);
@@ -129,5 +149,22 @@ mod tests {
         assert_eq!(s, CatalogSummary::default());
         assert_eq!(s.total_count(), 0);
         assert_eq!(s.total_bytes, 0);
+    }
+
+    #[test]
+    fn is_game_image_aceita_iso_e_zso_qualquer_caixa() {
+        assert!(is_game_image_name("God of War.iso"));
+        assert!(is_game_image_name("SLUS_200.02.God of War.ISO"));
+        assert!(is_game_image_name("comprimido.zso"));
+        assert!(is_game_image_name("comprimido.ZSO"));
+    }
+
+    #[test]
+    fn is_game_image_rejeita_lixo_sem_extensao_de_jogo() {
+        // o caso real que poluía o catálogo: arquivo solto "games" (sem extensão)
+        assert!(!is_game_image_name("games"));
+        assert!(!is_game_image_name("opl_meta.json"));
+        assert!(!is_game_image_name("LEIAME.txt"));
+        assert!(!is_game_image_name(".iso")); // só a extensão, sem nome → não é jogo
     }
 }

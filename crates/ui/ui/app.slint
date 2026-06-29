@@ -1,96 +1,262 @@
-import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit, ListView, CheckBox } from "std-widgets.slint";
 
-// Janela funcional da Fase 1: seleção do diretório-alvo, status do servidor,
-// IP/instruções de conexão, catálogo e start/stop. A lógica de negócio vive no
-// core/infra; aqui só apresentação e callbacks (a UI nunca fala com a infra
-// direto — o binário é a raiz de composição). O aviso de SMBv1 cumpre o
+// Uma linha do catálogo rico. Preenchida pelo binário (raiz de composição) a
+// partir do `GameMeta` do core; campos já formatados para exibição.
+struct GameRow {
+    title: string,
+    game-id: string,
+    media: string,
+    size: string,
+}
+
+// Janela funcional: seleção do diretório-alvo, status do servidor, IP/instruções
+// de conexão, catálogo e um controle ÚNICO de servidor (ativar/desativar). A
+// lógica de negócio vive no core/infra; aqui só apresentação e callbacks (a UI
+// nunca fala com a infra direto — o binário é a raiz de composição).
+//
+// Os ajustes de configuração (acesso ao share) vivem num painel de
+// "Configurações" separado (gear no topo), para não empurrarem o catálogo para
+// fora da área visível — a tela principal fica enxuta. O aviso de SMBv1 cumpre o
 // requisito de transparência (§0/§8).
 export component AppWindow inherits Window {
     title: "oplhost — servidor OPL";
-    preferred-width: 560px;
-    preferred-height: 460px;
+    preferred-width: 600px;
+    preferred-height: 740px;
+    min-width: 520px;
+    // Sem min-height explícito de propósito: o Slint deriva o mínimo da janela
+    // do layout (lista no seu `min-height` + tudo que é fixo). Como a área de
+    // status tem altura reservada (não é condicional), esse mínimo é constante
+    // e SEMPRE cabe o aviso de SMBv1 e o botão — nunca são cortados.
 
-    in property <string> status-text: "Parado";
+    in property <string> status-text: "Inativo";
     in property <string> ip-text: "—";
-    in property <string> catalog-text: "Nenhum diretório carregado.";
+    in property <string> catalog-summary: "Nenhum diretório carregado.";
+    in property <[GameRow]> catalog-rows: [];
     in property <string> message-text: "";
     in-out property <string> dir-path: "";
     in property <bool> busy: false;
+    // Estado real do servidor: a config do OPL está aplicada (servindo)? Dirige o
+    // botão único de toggle (rótulo/ação) de forma coerente com o status.
+    in property <bool> server-active: false;
+    // Painel de Configurações sobreposto à tela principal (gear no cabeçalho).
+    in-out property <bool> show-settings: false;
+    // Dica contextual sobre o diretório-alvo (estrutura existente, subpasta etc.).
+    in property <string> dir-hint: "A estrutura de pastas do OPL (CD, DVD, ART…) é criada aqui se ainda não existir.";
+    in property <bool> dir-hint-warning: false;
+    // Acesso opcional usuário/senha. Guest (acesso livre) é o padrão.
+    in-out property <bool> auth-enabled: false;
+    in-out property <string> auth-password: "";
+    in property <string> auth-username: "";
 
-    callback start-clicked();
-    callback stop-clicked();
+    callback toggle-server-clicked();
     callback choose-dir-clicked();
+    callback download-art-clicked();
+    callback dir-path-edited();
 
     VerticalBox {
-        padding: 16px;
-        spacing: 12px;
+        padding: 12px;
+        spacing: 10px;
 
-        Text {
-            text: "oplhost";
-            font-size: 24px;
-            font-weight: 700;
-        }
-
-        GroupBox {
-            title: "Diretório-alvo do OPL";
-            VerticalBox {
-                HorizontalBox {
-                    spacing: 8px;
-                    LineEdit {
-                        placeholder-text: "/caminho/para/o/disco-ou-pasta";
-                        text <=> root.dir-path;
-                        enabled: !root.busy;
-                    }
-                    Button {
-                        text: "Escolher pasta…";
-                        enabled: !root.busy;
-                        clicked => { root.choose-dir-clicked(); }
-                    }
-                }
-                Text {
-                    text: "A estrutura de pastas do OPL (CD, DVD, ART, …) é criada aqui.";
-                    font-size: 12px;
-                    color: #888;
-                }
-            }
-        }
-
-        GroupBox {
-            title: "Servidor";
-            VerticalBox {
-                Text { text: "Status: " + root.status-text; }
-                Text { text: "IP local (digite no OPL): " + root.ip-text; }
-                Text { text: root.catalog-text; }
-            }
-        }
-
-        if root.message-text != "": Text {
-            text: root.message-text;
-            wrap: word-wrap;
-            color: #d33682;
-        }
-
-        Text {
-            text: "Atenção: o OPL exige SMBv1 (protocolo legado). O app reabilita "
-                + "esse protocolo num share isolado e abre a porta 445 — pedindo "
-                + "sua senha uma única vez.";
-            wrap: word-wrap;
-            color: #b58900;
-        }
-
+        // Cabeçalho: título + botão de Configurações (alterna o painel).
         HorizontalBox {
             spacing: 8px;
-            Button {
-                text: "Iniciar servidor";
-                primary: true;
-                enabled: !root.busy;
-                clicked => { root.start-clicked(); }
+            Text {
+                text: root.show-settings ? "Configurações" : "oplhost";
+                font-size: 24px;
+                font-weight: 700;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
             }
             Button {
-                text: "Parar e reverter";
+                text: root.show-settings ? "← Voltar" : "⚙ Configurações";
                 enabled: !root.busy;
-                clicked => { root.stop-clicked(); }
+                clicked => { root.show-settings = !root.show-settings; }
             }
+        }
+
+        // ===================== TELA PRINCIPAL =====================
+        if !root.show-settings: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 10px;
+
+            GroupBox {
+                title: "Diretório-alvo do OPL";
+                VerticalBox {
+                    HorizontalBox {
+                        spacing: 8px;
+                        LineEdit {
+                            placeholder-text: "/caminho/para/o/disco-ou-pasta";
+                            text <=> root.dir-path;
+                            enabled: !root.busy;
+                            edited => { root.dir-path-edited(); }
+                        }
+                        Button {
+                            text: "Escolher pasta…";
+                            enabled: !root.busy;
+                            clicked => { root.choose-dir-clicked(); }
+                        }
+                    }
+                    Text {
+                        text: root.dir-hint;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        color: root.dir-hint-warning ? #b58900 : #888;
+                    }
+                }
+            }
+
+            GroupBox {
+                title: "Servidor";
+                VerticalBox {
+                    Text { text: "Status: " + root.status-text; }
+                    Text { text: "IP local (digite no OPL): " + root.ip-text; }
+                }
+            }
+
+            GroupBox {
+                title: "Catálogo";
+                vertical-stretch: 1;
+                VerticalBox {
+                    spacing: 6px;
+                    Text {
+                        text: root.catalog-summary;
+                        font-weight: 600;
+                    }
+                    ListView {
+                        min-height: 80px;
+                        vertical-stretch: 1;
+                        for row[idx] in root.catalog-rows: Rectangle {
+                            height: 26px;
+                            background: Math.mod(idx, 2) == 0 ? transparent : #00000008;
+                            HorizontalBox {
+                                padding-left: 6px;
+                                // Gutter à direita pro scrollbar nativo do ListView
+                                // não cobrir a coluna de tamanho.
+                                padding-right: 18px;
+                                padding-top: 2px;
+                                padding-bottom: 2px;
+                                spacing: 8px;
+                                Text {
+                                    text: row.title;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: row.game-id;
+                                    width: 96px;
+                                    color: #888;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: row.media;
+                                    width: 36px;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: row.size;
+                                    width: 72px;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                    Button {
+                        text: "Baixar capas";
+                        // Só faz sentido com catálogo carregado.
+                        enabled: !root.busy && root.catalog-rows.length > 0;
+                        clicked => { root.download-art-clicked(); }
+                    }
+                }
+            }
+
+            // Área de status/erro com altura reservada: mostrar ou ocultar a
+            // mensagem não reflui o layout (não empurra o aviso nem o botão).
+            Rectangle {
+                height: 36px;
+                Text {
+                    width: 100%;
+                    text: root.message-text;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    color: #d33682;
+                }
+            }
+
+            Text {
+                text: "Atenção: o OPL exige SMBv1 (protocolo legado). O app reabilita "
+                    + "esse protocolo num share isolado e abre a porta 445 — pedindo "
+                    + "sua senha uma única vez.";
+                wrap: word-wrap;
+                color: #b58900;
+            }
+
+            // Controle ÚNICO do servidor: o mesmo botão ativa ou desativa,
+            // conforme o estado real (sem os dois botões conflitantes de antes).
+            Button {
+                text: root.server-active ? "Desativar e reverter" : "Ativar servidor";
+                primary: !root.server-active;
+                enabled: !root.busy;
+                clicked => { root.toggle-server-clicked(); }
+            }
+        }
+
+        // ===================== CONFIGURAÇÕES =====================
+        if root.show-settings: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 10px;
+
+            GroupBox {
+                title: "Acesso ao share";
+                VerticalBox {
+                    spacing: 6px;
+                    CheckBox {
+                        text: "Exigir usuário e senha (em vez de acesso livre)";
+                        checked <=> root.auth-enabled;
+                        enabled: !root.busy;
+                    }
+                    if root.auth-enabled: VerticalBox {
+                        spacing: 6px;
+                        // Empacota no topo: sem isto o LineEdit esticava na vertical
+                        // e desperdiçava a tela (feedback 2026-06-28).
+                        alignment: start;
+                        Text {
+                            text: "Usuário: " + root.auth-username
+                                + "  —  no OPL, configure o SMB com este usuário e a senha abaixo.";
+                            font-size: 12px;
+                            color: #888;
+                        }
+                        LineEdit {
+                            placeholder-text: "Senha do share";
+                            input-type: password;
+                            text <=> root.auth-password;
+                            enabled: !root.busy;
+                            // Mantém a altura de UMA linha (não estica na vertical).
+                            vertical-stretch: 0;
+                        }
+                        Text {
+                            text: "Sem isto o share fica aberto (guest): qualquer um na sua rede "
+                                + "local lê e grava. A senha é gravada no Samba do sistema (smbpasswd).";
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: #b58900;
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: "Alterações de acesso valem na próxima vez que você ativar o "
+                    + "servidor (ou reative para aplicar agora).";
+                font-size: 12px;
+                wrap: word-wrap;
+                color: #888;
+            }
+
+            // Empurra o conteúdo das Configurações para o topo.
+            Rectangle { vertical-stretch: 1; }
         }
     }
 }
