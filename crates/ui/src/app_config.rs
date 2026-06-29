@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 
 use oplhost_core::{
     AppSettings, SETTINGS_VERSION, ServerStatus, SettingsStore, ShareAuth, ShareConfig,
-    StorageBackend,
 };
-use oplhost_infra::{FsSettingsStore, SmbBackend};
+use oplhost_infra::{FsSettingsStore, opl_share_status};
 
 use crate::i18n::t;
 
@@ -66,11 +65,11 @@ pub fn auth_mode(enabled: bool) -> ShareAuth {
 }
 
 /// Estado atual do servidor para a UI: `(texto, ativo)`. "Ativo" = a config do
-/// OPL está aplicada (share isolado + include), derivado do backend — não do
-/// daemon global (decisão 2026-06-27). Sem root (leitura de arquivos).
+/// OPL está aplicada (share isolado + include), derivado dos caminhos padrão do
+/// Samba — não do daemon global (decisão 2026-06-27). Sem root (leitura de
+/// arquivos) e sem precisar montar uma `ShareConfig`.
 pub fn current_status() -> (String, bool) {
-    let backend = SmbBackend::new(share_config(Path::new("/"), ShareAuth::Guest));
-    let active = matches!(backend.status(), Ok(ServerStatus::Running));
+    let active = matches!(opl_share_status(), ServerStatus::Running);
     let text = if active {
         t("status-active")
     } else {

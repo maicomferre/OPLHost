@@ -20,6 +20,9 @@ pub mod scan;
 pub mod smb_backend;
 pub mod smb_script;
 
+#[cfg(test)]
+mod test_util;
+
 pub use art::{ArtError, ArtProvider, ArtType, FetchOutcome, HttpGet, UreqClient};
 pub use firewall::{FirewallManager, Protocol};
 pub use fs_game_info_store::FsGameInfoStore;
@@ -27,5 +30,5 @@ pub use fs_settings_store::FsSettingsStore;
 pub use meta_store::JsonMetaStore;
 pub use privilege::{PkexecEscalator, PrivilegeEscalator};
 pub use real_fs::RealFs;
-pub use smb_backend::SmbBackend;
+pub use smb_backend::{SmbBackend, opl_share_status};
 pub use smb_script::{SmbPaths, build_apply_script, build_rollback_script, build_smb_conf};

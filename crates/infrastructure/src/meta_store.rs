@@ -54,16 +54,13 @@ impl MetaStore for JsonMetaStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_path;
     use oplhost_core::{GameEntry, GameMeta, MediaKind};
 
     /// Diretório temporário único POR CHAMADA — os testes rodam em paralelo e
-    /// não podem disputar o mesmo arquivo. Combina PID + contador atômico.
+    /// não podem disputar o mesmo arquivo.
     fn temp_dir() -> PathBuf {
-        use std::sync::atomic::{AtomicU32, Ordering};
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut d = std::env::temp_dir();
-        d.push(format!("oplhost-metastore-test-{}-{n}", std::process::id()));
+        let d = unique_path("metastore");
         std::fs::create_dir_all(&d).unwrap();
         d
     }

@@ -53,14 +53,10 @@ pub fn scan_games_with_paths(root: &Path) -> Vec<ScannedGame> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use crate::test_util::unique_path;
 
     fn temp_root() -> std::path::PathBuf {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut d = std::env::temp_dir();
-        d.push(format!("oplhost-scan-test-{}-{n}", std::process::id()));
-        d
+        unique_path("scan")
     }
 
     /// Só as entradas de catálogo (sem os caminhos), para os asserts.

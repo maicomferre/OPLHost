@@ -49,8 +49,8 @@ fn read_extent(file: &mut File, lba: u32, size: u32) -> std::io::Result<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_path;
     use std::io::Write;
-    use std::sync::atomic::{AtomicU32, Ordering};
 
     /// Monta um registro de diretório ISO9660 sintético.
     fn dir_record(name: &str, extent: u32, size: u32, is_dir: bool) -> Vec<u8> {
@@ -67,11 +67,7 @@ mod tests {
     }
 
     fn temp_iso_path() -> std::path::PathBuf {
-        static N: AtomicU32 = AtomicU32::new(0);
-        let i = N.fetch_add(1, Ordering::Relaxed);
-        let mut p = std::env::temp_dir();
-        p.push(format!("oplhost-iso-test-{}-{i}.iso", std::process::id()));
-        p
+        unique_path("iso").with_extension("iso")
     }
 
     /// Constrói uma ISO mínima válida: PVD no setor 16 apontando o diretório raiz
