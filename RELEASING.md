@@ -57,4 +57,9 @@ por exemplo `oplhost_0.1.0~alpha.1-1_amd64.deb`.
    git push origin v0.1.0-alpha.1
    ```
 5. O workflow `.github/workflows/release.yml` dispara com a tag, gera o `.deb` e
-   publica a Release (marcada como *pre-release*), anexando o pacote.
+   cria a Release **como rascunho** (*pre-release*), com o pacote anexado.
+6. Revise o rascunho em
+   [Releases](https://github.com/maicomferre/OPLHost/releases) e clique em
+   **Publish** para torná-lo público. O rascunho é necessário porque o
+   repositório usa *immutable releases*: uma release já publicada não aceita
+   upload de asset depois. A publicação manual é o gate explícito do processo.
