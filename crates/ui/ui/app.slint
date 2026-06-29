@@ -20,6 +20,11 @@ struct GameRow {
 // requisito de transparência (§0/§8).
 export component AppWindow inherits Window {
     title: "oplhost — servidor OPL";
+    // Ícone da janela embutido em tempo de compilação. Aparece na barra de
+    // título/taskbar mesmo em `cargo run` (sem .desktop instalado). Em alguns
+    // compositores Wayland a taskbar usa o app_id do .desktop, não este ícone —
+    // por isso o .desktop (Icon=oplhost) continua sendo necessário pós-instalação.
+    icon: @image-url("../packaging/oplhost.png");
     preferred-width: 600px;
     preferred-height: 740px;
     min-width: 520px;
