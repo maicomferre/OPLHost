@@ -206,7 +206,10 @@ mod tests {
         let meta = OplMeta::from_games(vec![GameMeta::from_entry(&entry, id.clone())]);
 
         // Mesmo nome + tamanho → reaproveita o ID do cache.
-        assert_eq!(meta.game_id_for(&entry.file_name, entry.size_bytes), id.as_ref());
+        assert_eq!(
+            meta.game_id_for(&entry.file_name, entry.size_bytes),
+            id.as_ref()
+        );
         // Tamanho diferente (ISO trocada) → não casa, força releitura.
         assert_eq!(meta.game_id_for(&entry.file_name, 123), None);
         // Entrada sem ID no cache → None (relê do disco).

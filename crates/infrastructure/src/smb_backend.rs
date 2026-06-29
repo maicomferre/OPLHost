@@ -86,7 +86,6 @@ impl<E: PrivilegeEscalator> SmbBackend<E> {
             .map(|o| o.stdout.starts_with(b"active"))
             .unwrap_or(false)
     }
-
 }
 
 /// A config do OPL está aplicada nos `paths` dados? Verdadeiro quando o
