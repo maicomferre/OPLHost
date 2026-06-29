@@ -1,3 +1,14 @@
+oplhost (0.1.0~alpha.1-1) unstable; urgency=medium
+
+  * Primeira release alpha pública. Servidor SMBv1 dedicado ao Open PS2 Loader:
+    geração/rollback do share isolado, firewall (ufw/iptables), Polkit e
+    estrutura de pastas do OPL. Catálogo do diretório (Game ID via SYSTEM.CNF,
+    mídia e tamanho), download de capas por Game ID, autenticação opcional do
+    share, painel de Configurações e controle único de ativar/desativar.
+    Validado com OPL v1.2.0-beta-2012-b84c2b e Samba 4.23.x.
+
+ -- Maicom Ferreira <maicomferre3242@gmail.com>  Sun, 28 Jun 2026 22:49:57 -0300
+
 oplhost (0.1.0-1) unstable; urgency=medium
 
   * Fase 1: servidor SMBv1 dedicado ao Open PS2 Loader — geração/rollback do

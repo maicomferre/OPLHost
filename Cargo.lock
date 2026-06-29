@@ -3387,7 +3387,7 @@ dependencies = [
 
 [[package]]
 name = "oplhost"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "oplhost-core",
  "oplhost-infra",
