@@ -1,3 +1,13 @@
+oplhost (0.1.0~alpha.2-1) unstable; urgency=medium
+
+  * Re-emissão da primeira release alpha (alpha.1 ficou indisponível: o nome
+    da tag foi reservado permanentemente pelo recurso "immutable releases" do
+    GitHub). Sem mudança funcional sobre alpha.1. Pipeline de release passa a
+    publicar a Release como rascunho, contornando a restrição de upload de
+    asset em releases publicadas.
+
+ -- Maicom Ferreira <maicomferre3242@gmail.com>  Sun, 28 Jun 2026 23:34:02 -0300
+
 oplhost (0.1.0~alpha.1-1) unstable; urgency=medium
 
   * Primeira release alpha pública. Servidor SMBv1 dedicado ao Open PS2 Loader:
