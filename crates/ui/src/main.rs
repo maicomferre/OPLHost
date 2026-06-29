@@ -24,6 +24,9 @@ use oplhost_infra::{
 };
 use slint::{Model, ModelRc, VecModel};
 
+mod i18n;
+use i18n::{t, t_args};
+
 slint::include_modules!();
 
 const SHARE_NAME: &str = "PS2SMB";
@@ -108,11 +111,17 @@ impl UiUpdate {
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
 
+    // Detecta o idioma do SO e aplica às traduções do Slint (@tr) + fluent (Rust).
+    // Logo após new() para o Slint reavaliar os @tr reativamente.
+    i18n::init();
+
     ui.set_ip_text(
         net::local_ip()
-            .unwrap_or_else(|| "indisponível (offline?)".into())
+            .unwrap_or_else(|| t("ip-unavailable"))
             .into(),
     );
+    // Resumo do catálogo começa "vazio" (sobrescrito quando um diretório carrega).
+    ui.set_catalog_summary(t("catalog-empty").into());
     let (status, active) = current_status();
     ui.set_status_text(status.into());
     ui.set_server_active(active);
@@ -129,21 +138,21 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_auth_enabled(restored.auth_required);
     apply_dir_hint(&ui);
 
-    // Se havia um diretório válido salvo, recarrega o catálogo dele em background
-    // (leitura de disco, sem Polkit) para a lista já aparecer preenchida.
+    // Se havia um diretório válido salvo, recarrega o catálogo dele AGORA, antes
+    // de `run()` (leitura de disco, sem Polkit). Síncrono de propósito: evita o
+    // flash de "catálogo vazio" → "preenchido" que um job de background causaria
+    // logo após o show. Para bibliotecas típicas a leitura é instantânea.
+    // (O dimensionamento da janela NÃO depende disto: a lista é `vertical-stretch`,
+    // então a janela nasce com a `preferred-height` do `.slint`, não com a altura
+    // do conteúdo — ver o comentário da janela em app.slint.)
     if let Some(dir) = restored.last_target_dir.filter(|d| d.is_dir()) {
-        spawn_job(
-            &ui,
-            "Recarregando catálogo do último diretório…",
-            move || {
-                let (rows, summary) = build_catalog(&dir);
-                UiUpdate {
-                    rows: Some(rows),
-                    summary: Some(summary),
-                    ..Default::default()
-                }
-            },
-        );
+        let (rows, summary) = build_catalog(&dir);
+        UiUpdate {
+            rows: Some(rows),
+            summary: Some(summary),
+            ..Default::default()
+        }
+        .apply_to(&ui);
     }
 
     // Controle único do servidor: o mesmo botão ativa (apply) ou desativa
@@ -215,11 +224,7 @@ fn apply_dir_hint(ui: &AppWindow) {
 ///    estrutura será criada ali (só como fallback, não sempre).
 fn dir_hint(path: &Path) -> (String, bool) {
     if path.as_os_str().is_empty() {
-        return (
-            "A estrutura de pastas do OPL (CD, DVD, ART…) é criada aqui se ainda não existir."
-                .to_string(),
-            false,
-        );
+        return (t("hint-empty"), false);
     }
 
     if let Some(name) = path.file_name().and_then(|n| n.to_str())
@@ -229,27 +234,20 @@ fn dir_hint(path: &Path) -> (String, bool) {
             .parent()
             .map(|p| p.display().to_string())
             .filter(|p| !p.is_empty())
-            .unwrap_or_else(|| "a pasta acima".to_string());
+            .unwrap_or_else(|| t("hint-parent-fallback"));
         return (
-            format!(
-                "Você selecionou a subpasta \"{name}\" da estrutura do OPL. \
-                 A raiz do OPL provavelmente é \"{parent}\" — selecione-a."
+            t_args(
+                "hint-subdir",
+                &[("name", name.to_string()), ("parent", parent)],
             ),
             true,
         );
     }
 
     if path.join("CD").is_dir() || path.join("DVD").is_dir() {
-        (
-            "Estrutura do OPL detectada nesta pasta — nada será recriado.".to_string(),
-            false,
-        )
+        (t("hint-detected"), false)
     } else {
-        (
-            "A estrutura de pastas do OPL (CD, DVD, ART…) será criada aqui, pois ainda não existe."
-                .to_string(),
-            false,
-        )
+        (t("hint-will-create"), false)
     }
 }
 
@@ -321,24 +319,20 @@ fn handle_toggle_server(ui: &AppWindow) {
 fn handle_activate(ui: &AppWindow) {
     let target = PathBuf::from(ui.get_dir_path().to_string().trim());
     if target.as_os_str().is_empty() {
-        ui.set_message_text("Escolha um diretório-alvo antes de ativar.".into());
+        ui.set_message_text(t("msg-choose-dir-before-activate").into());
         return;
     }
 
     let auth_enabled = ui.get_auth_enabled();
     let password = ui.get_auth_password().to_string();
     if auth_enabled && password.trim().is_empty() {
-        ui.set_message_text(
-            "Defina uma senha para o acesso autenticado (ou desmarque a opção).".into(),
-        );
+        ui.set_message_text(t("msg-set-password").into());
         return;
     }
 
-    spawn_job(
-        ui,
-        "Aplicando configuração (informe sua senha no prompt)…",
-        move || run_activate(&target, auth_enabled, password),
-    );
+    spawn_job(ui, &t("progress-applying"), move || {
+        run_activate(&target, auth_enabled, password)
+    });
 }
 
 /// "Desativar e reverter": rollback completo (remove share + include + firewall)
@@ -348,11 +342,9 @@ fn handle_deactivate(ui: &AppWindow) {
     let target = PathBuf::from(ui.get_dir_path().to_string());
     let auth_enabled = ui.get_auth_enabled();
 
-    spawn_job(
-        ui,
-        "Revertendo configuração (informe sua senha no prompt)…",
-        move || run_deactivate(&target, auth_enabled),
-    );
+    spawn_job(ui, &t("progress-reverting"), move || {
+        run_deactivate(&target, auth_enabled)
+    });
 }
 
 /// "Escolher pasta…": abre o seletor nativo (zenity/kdialog) numa worker thread
@@ -365,7 +357,7 @@ fn handle_choose_dir(ui: &AppWindow) {
         s => Some(PathBuf::from(s)),
     };
     let auth_enabled = ui.get_auth_enabled();
-    spawn_job(ui, "Selecionando pasta…", move || {
+    spawn_job(ui, &t("progress-selecting-folder"), move || {
         run_choose_dir(start, auth_enabled)
     });
 }
@@ -394,10 +386,10 @@ fn run_choose_dir(start: Option<PathBuf>, auth_enabled: bool) -> UiUpdate {
 fn handle_download_art(ui: &AppWindow) {
     let target = PathBuf::from(ui.get_dir_path().to_string().trim());
     if target.as_os_str().is_empty() {
-        ui.set_message_text("Escolha um diretório-alvo antes de baixar capas.".into());
+        ui.set_message_text(t("msg-choose-dir-before-art").into());
         return;
     }
-    spawn_job(ui, "Baixando capas das fontes externas…", move || {
+    spawn_job(ui, &t("progress-downloading-art"), move || {
         run_download_art(&target)
     });
 }
@@ -405,7 +397,13 @@ fn handle_download_art(ui: &AppWindow) {
 fn run_download_art(target: &Path) -> UiUpdate {
     let art_dir = target.join("ART");
     if let Err(e) = std::fs::create_dir_all(&art_dir) {
-        return UiUpdate::message(format!("Não foi possível criar {}: {e}", art_dir.display()));
+        return UiUpdate::message(t_args(
+            "msg-cannot-create-dir",
+            &[
+                ("path", art_dir.display().to_string()),
+                ("error", e.to_string()),
+            ],
+        ));
     }
 
     let provider = ArtProvider::new();
@@ -428,9 +426,15 @@ fn run_download_art(target: &Path) -> UiUpdate {
         }
     }
 
-    UiUpdate::message(format!(
-        "Capas — {downloaded} baixada(s), {skipped} já existia(m), \
-         {not_found} sem capa na fonte, {no_id} sem Game ID, {errors} erro(s) de rede."
+    UiUpdate::message(t_args(
+        "msg-covers-result",
+        &[
+            ("downloaded", downloaded.to_string()),
+            ("skipped", skipped.to_string()),
+            ("notfound", not_found.to_string()),
+            ("noid", no_id.to_string()),
+            ("errors", errors.to_string()),
+        ],
     ))
 }
 
@@ -457,9 +461,9 @@ fn handle_game_clicked(ui: &AppWindow, idx: i32) {
             ui.set_editor_can_edit(true);
             match FsGameInfoStore::new(&target).load(&id) {
                 Ok(info) => set_editor_fields(ui, &info),
-                Err(e) => {
-                    ui.set_editor_note(format!("Não foi possível ler os metadados: {e}").into())
-                }
+                Err(e) => ui.set_editor_note(
+                    t_args("msg-cannot-read-meta", &[("error", e.to_string())]).into(),
+                ),
             }
             load_cover(ui, &target, &id);
         }
@@ -504,7 +508,7 @@ fn load_cover(ui: &AppWindow, target: &Path, id: &GameId) {
 /// editor, sem fechar. Sucesso fecha o editor e atualiza o título da linha.
 fn handle_save_game_info(ui: &AppWindow) {
     let Some(id) = GameId::parse(ui.get_editor_game_id().as_str()) else {
-        ui.set_editor_note("Jogo sem Game ID — não há onde gravar.".into());
+        ui.set_editor_note(t("msg-no-game-id").into());
         return;
     };
 
@@ -524,9 +528,13 @@ fn handle_save_game_info(ui: &AppWindow) {
         Ok(()) => {
             update_row_title(ui, &info);
             ui.set_show_game_editor(false);
-            ui.set_message_text(format!("Metadados salvos em CFG/{}.cfg.", id.as_str()).into());
+            ui.set_message_text(
+                t_args("msg-meta-saved", &[("id", id.as_str().to_string())]).into(),
+            );
         }
-        Err(e) => ui.set_editor_note(format!("Não foi possível salvar — {e}").into()),
+        Err(e) => {
+            ui.set_editor_note(t_args("msg-cannot-save-meta", &[("error", e.to_string())]).into())
+        }
     }
 }
 
@@ -585,9 +593,12 @@ where
 /// Polkit. Retorna o que a UI deve mostrar.
 fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUpdate {
     if let Err(e) = create_opl_layout(&RealFs, target) {
-        return UiUpdate::message(format!(
-            "Falha ao criar a estrutura em {}: {e}",
-            target.display()
+        return UiUpdate::message(t_args(
+            "msg-cannot-create-layout",
+            &[
+                ("path", target.display().to_string()),
+                ("error", e.to_string()),
+            ],
         ));
     }
 
@@ -608,7 +619,7 @@ fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUpdate
                 ..Default::default()
             }
         }
-        Err(e) => UiUpdate::message(format!("Não foi possível ativar: {e}")),
+        Err(e) => UiUpdate::message(t_args("msg-cannot-activate", &[("error", e.to_string())])),
     }
 }
 
@@ -621,11 +632,11 @@ fn run_deactivate(target: &Path, auth_enabled: bool) -> UiUpdate {
             UiUpdate {
                 status: Some(status),
                 active: Some(active),
-                message: "Configuração revertida. Nada do app permanece no sistema.".to_string(),
+                message: t("msg-reverted"),
                 ..Default::default()
             }
         }
-        Err(e) => UiUpdate::message(format!("Falha ao reverter: {e}")),
+        Err(e) => UiUpdate::message(t_args("msg-cannot-revert", &[("error", e.to_string())])),
     }
 }
 
@@ -636,11 +647,10 @@ fn current_status() -> (String, bool) {
     let backend = SmbBackend::new(share_config(Path::new("/"), ShareAuth::Guest));
     let active = matches!(backend.status(), Ok(ServerStatus::Running));
     let text = if active {
-        "Ativo — compartilhando o catálogo do OPL"
+        t("status-active")
     } else {
-        "Inativo — configuração não aplicada"
-    }
-    .to_string();
+        t("status-inactive")
+    };
     (text, active)
 }
 
@@ -664,12 +674,14 @@ fn build_catalog(target: &Path) -> (Vec<RowData>, String) {
     let _ = store.save(&OplMeta::from_games(metas.clone())); // best-effort
 
     let rows = metas.iter().map(row_from_meta).collect();
-    let summary_text = format!(
-        "{} jogo(s) — {} CD, {} DVD — {}",
-        summary.total_count(),
-        summary.cd_count,
-        summary.dvd_count,
-        format_size(summary.total_bytes)
+    let summary_text = t_args(
+        "catalog-summary",
+        &[
+            ("total", summary.total_count().to_string()),
+            ("cd", summary.cd_count.to_string()),
+            ("dvd", summary.dvd_count.to_string()),
+            ("size", format_size(summary.total_bytes)),
+        ],
     );
     (rows, summary_text)
 }

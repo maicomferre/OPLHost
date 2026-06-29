@@ -17,28 +17,35 @@ struct GameRow {
 // lógica de negócio vive no core/infra; aqui só apresentação e callbacks (a UI
 // nunca fala com a infra direto — o binário é a raiz de composição).
 //
-// Os ajustes de configuração (acesso ao share) vivem num painel de
-// "Configurações" separado (gear no topo), para não empurrarem o catálogo para
-// fora da área visível — a tela principal fica enxuta. O aviso de SMBv1 cumpre o
-// requisito de transparência (§0/§8).
+// i18n híbrido (ver plans/fase-3-i18n.md): as strings ESTÁTICAS aqui usam
+// `@tr("English source")` (traduções `.po` bundladas). As strings DINÂMICAS
+// (status, IP, resumo, dicas, mensagens, notas) são montadas em Rust via fluent
+// e entram por properties — por isso seus defaults são "" (o binário preenche).
 export component AppWindow inherits Window {
-    title: "oplhost — servidor OPL";
+    title: @tr("oplhost — OPL server");
     // Ícone da janela embutido em tempo de compilação. Aparece na barra de
     // título/taskbar mesmo em `cargo run` (sem .desktop instalado). Em alguns
     // compositores Wayland a taskbar usa o app_id do .desktop, não este ícone —
     // por isso o .desktop (Icon=oplhost) continua sendo necessário pós-instalação.
     icon: @image-url("../packaging/oplhost.png");
     preferred-width: 600px;
-    preferred-height: 740px;
+    // A lista do catálogo é `vertical-stretch` (sem altura natural fixa), então a
+    // janela nasce com ESTA `preferred-height` no primeiro show — não com o mínimo
+    // derivado do layout. Por isso ela precisa caber o conteúdo do IDIOMA MAIS
+    // LONGO (pt-BR, cujo aviso de SMBv1 quebra em mais linhas que o en-US): com
+    // 740px o botão inferior nascia cortado em pt-BR e só reaparecia ao entrar/sair
+    // de Configurações (que força um relayout e cresce a janela). Com folga, o
+    // botão e o aviso cabem já no primeiro show em ambos os idiomas.
+    preferred-height: 820px;
     min-width: 520px;
-    // Sem min-height explícito de propósito: o Slint deriva o mínimo da janela
-    // do layout (lista no seu `min-height` + tudo que é fixo). Como a área de
-    // status tem altura reservada (não é condicional), esse mínimo é constante
-    // e SEMPRE cabe o aviso de SMBv1 e o botão — nunca são cortados.
+    // Sem min-height explícito de propósito: o Slint deriva o mínimo da janela do
+    // layout (lista no seu `min-height` + tudo que é fixo); ao redimensionar à mão
+    // a lista encolhe primeiro, preservando aviso e botão.
 
-    in property <string> status-text: "Inativo";
-    in property <string> ip-text: "—";
-    in property <string> catalog-summary: "Nenhum diretório carregado.";
+    // Dinâmicas (preenchidas pelo binário via fluent) → default "".
+    in property <string> status-text: "";
+    in property <string> ip-text: "";
+    in property <string> catalog-summary: "";
     in property <[GameRow]> catalog-rows: [];
     in property <string> message-text: "";
     in-out property <string> dir-path: "";
@@ -63,7 +70,7 @@ export component AppWindow inherits Window {
     in property <string> editor-media: "";
     // Sem Game ID o OPL não tem como nomear o .cfg → editor abre só-leitura.
     in property <bool> editor-can-edit: false;
-    // Aviso contextual do editor (sem Game ID, limite de caracteres etc.).
+    // Aviso contextual do editor (dinâmico, montado em Rust).
     in property <string> editor-note: "";
     // Campos editáveis (espelham as 5 chaves de info do OPL).
     in-out property <string> field-title: "";
@@ -71,8 +78,8 @@ export component AppWindow inherits Window {
     in-out property <string> field-release: "";
     in-out property <string> field-developer: "";
     in-out property <string> field-description: "";
-    // Dica contextual sobre o diretório-alvo (estrutura existente, subpasta etc.).
-    in property <string> dir-hint: "A estrutura de pastas do OPL (CD, DVD, ART…) é criada aqui se ainda não existir.";
+    // Dica contextual sobre o diretório-alvo (dinâmica, montada em Rust).
+    in property <string> dir-hint: "";
     in property <bool> dir-hint-warning: false;
     // Acesso opcional usuário/senha. Guest (acesso livre) é o padrão.
     in-out property <bool> auth-enabled: false;
@@ -96,8 +103,8 @@ export component AppWindow inherits Window {
         HorizontalBox {
             spacing: 8px;
             Text {
-                text: root.show-game-editor ? "Editar metadados"
-                    : root.show-settings ? "Configurações" : "oplhost";
+                text: root.show-game-editor ? @tr("Edit metadata")
+                    : root.show-settings ? @tr("Settings") : "oplhost";
                 font-size: 24px;
                 font-weight: 700;
                 vertical-alignment: center;
@@ -105,7 +112,7 @@ export component AppWindow inherits Window {
             }
             // O gear some no editor (que tem seus próprios botões Cancelar/Salvar).
             if !root.show-game-editor: Button {
-                text: root.show-settings ? "← Voltar" : "⚙ Configurações";
+                text: root.show-settings ? @tr("← Back") : @tr("⚙ Settings");
                 enabled: !root.busy;
                 clicked => { root.show-settings = !root.show-settings; }
             }
@@ -117,18 +124,18 @@ export component AppWindow inherits Window {
             spacing: 10px;
 
             GroupBox {
-                title: "Diretório-alvo do OPL";
+                title: @tr("OPL target directory");
                 VerticalBox {
                     HorizontalBox {
                         spacing: 8px;
                         LineEdit {
-                            placeholder-text: "/caminho/para/o/disco-ou-pasta";
+                            placeholder-text: @tr("/path/to/disk-or-folder");
                             text <=> root.dir-path;
                             enabled: !root.busy;
                             edited => { root.dir-path-edited(); }
                         }
                         Button {
-                            text: "Escolher pasta…";
+                            text: @tr("Choose folder…");
                             enabled: !root.busy;
                             clicked => { root.choose-dir-clicked(); }
                         }
@@ -143,15 +150,15 @@ export component AppWindow inherits Window {
             }
 
             GroupBox {
-                title: "Servidor";
+                title: @tr("Server");
                 VerticalBox {
-                    Text { text: "Status: " + root.status-text; }
-                    Text { text: "IP local (digite no OPL): " + root.ip-text; }
+                    Text { text: @tr("Status: {}", root.status-text); }
+                    Text { text: @tr("Local IP (enter in OPL): {}", root.ip-text); }
                 }
             }
 
             GroupBox {
-                title: "Catálogo";
+                title: @tr("Catalog");
                 vertical-stretch: 1;
                 VerticalBox {
                     spacing: 6px;
@@ -160,7 +167,7 @@ export component AppWindow inherits Window {
                         font-weight: 600;
                     }
                     if root.catalog-rows.length > 0: Text {
-                        text: "Clique num jogo para editar os metadados (tela Informações do OPL).";
+                        text: @tr("Click a game to edit its metadata (OPL Information screen).");
                         font-size: 12px;
                         color: #888;
                     }
@@ -211,7 +218,7 @@ export component AppWindow inherits Window {
                         }
                     }
                     Button {
-                        text: "Baixar capas";
+                        text: @tr("Download covers");
                         // Só faz sentido com catálogo carregado.
                         enabled: !root.busy && root.catalog-rows.length > 0;
                         clicked => { root.download-art-clicked(); }
@@ -234,9 +241,7 @@ export component AppWindow inherits Window {
             }
 
             Text {
-                text: "Atenção: o OPL exige SMBv1 (protocolo legado). O app reabilita "
-                    + "esse protocolo num share isolado e abre a porta 445 — pedindo "
-                    + "sua senha uma única vez.";
+                text: @tr("Warning: OPL requires SMBv1 (a legacy protocol). The app re-enables it in an isolated share and opens port 445 — asking for your password once.");
                 wrap: word-wrap;
                 color: #b58900;
             }
@@ -244,7 +249,7 @@ export component AppWindow inherits Window {
             // Controle ÚNICO do servidor: o mesmo botão ativa ou desativa,
             // conforme o estado real (sem os dois botões conflitantes de antes).
             Button {
-                text: root.server-active ? "Desativar e reverter" : "Ativar servidor";
+                text: root.server-active ? @tr("Deactivate and revert") : @tr("Activate server");
                 primary: !root.server-active;
                 enabled: !root.busy;
                 clicked => { root.toggle-server-clicked(); }
@@ -257,11 +262,11 @@ export component AppWindow inherits Window {
             spacing: 10px;
 
             GroupBox {
-                title: "Acesso ao share";
+                title: @tr("Share access");
                 VerticalBox {
                     spacing: 6px;
                     CheckBox {
-                        text: "Exigir usuário e senha (em vez de acesso livre)";
+                        text: @tr("Require username and password (instead of open access)");
                         checked <=> root.auth-enabled;
                         enabled: !root.busy;
                     }
@@ -271,13 +276,12 @@ export component AppWindow inherits Window {
                         // e desperdiçava a tela (feedback 2026-06-28).
                         alignment: start;
                         Text {
-                            text: "Usuário: " + root.auth-username
-                                + "  —  no OPL, configure o SMB com este usuário e a senha abaixo.";
+                            text: @tr("User: {}  —  in OPL, configure SMB with this user and the password below.", root.auth-username);
                             font-size: 12px;
                             color: #888;
                         }
                         LineEdit {
-                            placeholder-text: "Senha do share";
+                            placeholder-text: @tr("Share password");
                             input-type: password;
                             text <=> root.auth-password;
                             enabled: !root.busy;
@@ -285,8 +289,7 @@ export component AppWindow inherits Window {
                             vertical-stretch: 0;
                         }
                         Text {
-                            text: "Sem isto o share fica aberto (guest): qualquer um na sua rede "
-                                + "local lê e grava. A senha é gravada no Samba do sistema (smbpasswd).";
+                            text: @tr("Without this the share is open (guest): anyone on your local network can read and write. The password is stored in the system Samba (smbpasswd).");
                             wrap: word-wrap;
                             font-size: 12px;
                             color: #b58900;
@@ -296,8 +299,7 @@ export component AppWindow inherits Window {
             }
 
             Text {
-                text: "Alterações de acesso valem na próxima vez que você ativar o "
-                    + "servidor (ou reative para aplicar agora).";
+                text: @tr("Access changes take effect the next time you activate the server (or reactivate to apply now).");
                 font-size: 12px;
                 wrap: word-wrap;
                 color: #888;
@@ -315,7 +317,7 @@ export component AppWindow inherits Window {
             spacing: 10px;
 
             GroupBox {
-                title: "Jogo";
+                title: @tr("Game");
                 HorizontalBox {
                     spacing: 12px;
                     alignment: start;
@@ -334,12 +336,12 @@ export component AppWindow inherits Window {
                             wrap: word-wrap;
                         }
                         Text {
-                            text: "Game ID: " + (root.editor-game-id == "" ? "—" : root.editor-game-id);
+                            text: @tr("Game ID: {}", root.editor-game-id == "" ? "—" : root.editor-game-id);
                             font-size: 12px;
                             color: #888;
                         }
                         Text {
-                            text: "Mídia: " + root.editor-media;
+                            text: @tr("Media: {}", root.editor-media);
                             font-size: 12px;
                             color: #888;
                         }
@@ -348,22 +350,22 @@ export component AppWindow inherits Window {
             }
 
             if root.editor-can-edit: GroupBox {
-                title: "Informações (exibidas no OPL)";
+                title: @tr("Information (shown in OPL)");
                 vertical-stretch: 1;
                 VerticalBox {
                     spacing: 6px;
                     Text {
-                        text: "Título";
+                        text: @tr("Title");
                         font-size: 12px;
                         color: #888;
                     }
                     LineEdit {
-                        placeholder-text: "Sobrescreve o nome exibido no OPL";
+                        placeholder-text: @tr("Overrides the name shown in OPL");
                         text <=> root.field-title;
                         enabled: !root.busy;
                     }
                     Text {
-                        text: "Gênero";
+                        text: @tr("Genre");
                         font-size: 12px;
                         color: #888;
                     }
@@ -372,17 +374,17 @@ export component AppWindow inherits Window {
                         enabled: !root.busy;
                     }
                     Text {
-                        text: "Lançamento";
+                        text: @tr("Release");
                         font-size: 12px;
                         color: #888;
                     }
                     LineEdit {
-                        placeholder-text: "ex.: 2005-03-22, 2005 ou \"24 de junho de 2007\"";
+                        placeholder-text: @tr("e.g. 2005-03-22, 2005 or \"June 24, 2007\"");
                         text <=> root.field-release;
                         enabled: !root.busy;
                     }
                     Text {
-                        text: "Desenvolvedor";
+                        text: @tr("Developer");
                         font-size: 12px;
                         color: #888;
                     }
@@ -391,7 +393,7 @@ export component AppWindow inherits Window {
                         enabled: !root.busy;
                     }
                     Text {
-                        text: "Descrição";
+                        text: @tr("Description");
                         font-size: 12px;
                         color: #888;
                     }
@@ -403,8 +405,7 @@ export component AppWindow inherits Window {
                         vertical-stretch: 1;
                     }
                     Text {
-                        text: "Cada campo aceita até 255 caracteres (limite do OPL). "
-                            + "Campo vazio remove o dado do jogo.";
+                        text: @tr("Each field accepts up to 255 characters (OPL limit). An empty field removes the data from the game.");
                         font-size: 12px;
                         wrap: word-wrap;
                         color: #888;
@@ -413,12 +414,10 @@ export component AppWindow inherits Window {
             }
 
             if !root.editor-can-edit: GroupBox {
-                title: "Informações";
+                title: @tr("Information");
                 vertical-stretch: 1;
                 Text {
-                    text: "Este jogo não tem um Game ID legível, então o OPL não "
-                        + "consegue casar um arquivo de metadados (CFG/<GameID>.cfg). "
-                        + "A edição fica indisponível para ele.";
+                    text: @tr("This game has no readable Game ID, so OPL cannot match a metadata file (CFG/<GameID>.cfg). Editing is unavailable for it.");
                     wrap: word-wrap;
                     color: #b58900;
                 }
@@ -440,13 +439,13 @@ export component AppWindow inherits Window {
             HorizontalBox {
                 spacing: 8px;
                 Button {
-                    text: "← Cancelar";
+                    text: @tr("← Cancel");
                     enabled: !root.busy;
                     clicked => { root.show-game-editor = false; }
                 }
                 Rectangle { horizontal-stretch: 1; }
                 Button {
-                    text: "Salvar metadados";
+                    text: @tr("Save metadata");
                     primary: true;
                     enabled: !root.busy && root.editor-can-edit;
                     clicked => { root.save-game-info-clicked(); }

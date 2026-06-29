@@ -14,9 +14,11 @@ name = "oplhost"
 path = "src/main.rs"
 
 [dependencies]
+fluent = "0.17.0"
 oplhost-core = { path = "../core" }
 oplhost-infra = { path = "../infrastructure" }
 slint = "1"
+unic-langid = "0.9.6"
 
 [build-dependencies]
 slint-build = "1"

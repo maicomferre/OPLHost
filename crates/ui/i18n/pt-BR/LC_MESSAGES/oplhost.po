@@ -1,0 +1,126 @@
+# Traduções pt-BR das strings estáticas do app.slint (i18n híbrido — ver
+# plans/fase-3-i18n.md). Idioma-fonte = inglês (o msgid é o texto do @tr).
+# Sem msgctxt: o build usa DefaultTranslationContext::None. Bundlado no binário.
+msgid ""
+msgstr ""
+"Project-Id-Version: oplhost\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: pt-BR\n"
+
+msgid "oplhost — OPL server"
+msgstr "oplhost — servidor OPL"
+
+msgid "Edit metadata"
+msgstr "Editar metadados"
+
+msgid "Settings"
+msgstr "Configurações"
+
+msgid "← Back"
+msgstr "← Voltar"
+
+msgid "⚙ Settings"
+msgstr "⚙ Configurações"
+
+msgid "OPL target directory"
+msgstr "Diretório-alvo do OPL"
+
+msgid "/path/to/disk-or-folder"
+msgstr "/caminho/para/o/disco-ou-pasta"
+
+msgid "Choose folder…"
+msgstr "Escolher pasta…"
+
+msgid "Server"
+msgstr "Servidor"
+
+msgid "Status: {}"
+msgstr "Status: {}"
+
+msgid "Local IP (enter in OPL): {}"
+msgstr "IP local (digite no OPL): {}"
+
+msgid "Catalog"
+msgstr "Catálogo"
+
+msgid "Click a game to edit its metadata (OPL Information screen)."
+msgstr "Clique num jogo para editar os metadados (tela Informações do OPL)."
+
+msgid "Download covers"
+msgstr "Baixar capas"
+
+msgid "Warning: OPL requires SMBv1 (a legacy protocol). The app re-enables it in an isolated share and opens port 445 — asking for your password once."
+msgstr "Atenção: o OPL exige SMBv1 (protocolo legado). O app reabilita esse protocolo num share isolado e abre a porta 445 — pedindo sua senha uma única vez."
+
+msgid "Deactivate and revert"
+msgstr "Desativar e reverter"
+
+msgid "Activate server"
+msgstr "Ativar servidor"
+
+msgid "Share access"
+msgstr "Acesso ao share"
+
+msgid "Require username and password (instead of open access)"
+msgstr "Exigir usuário e senha (em vez de acesso livre)"
+
+msgid "User: {}  —  in OPL, configure SMB with this user and the password below."
+msgstr "Usuário: {}  —  no OPL, configure o SMB com este usuário e a senha abaixo."
+
+msgid "Share password"
+msgstr "Senha do share"
+
+msgid "Without this the share is open (guest): anyone on your local network can read and write. The password is stored in the system Samba (smbpasswd)."
+msgstr "Sem isto o share fica aberto (guest): qualquer um na sua rede local lê e grava. A senha é gravada no Samba do sistema (smbpasswd)."
+
+msgid "Access changes take effect the next time you activate the server (or reactivate to apply now)."
+msgstr "Alterações de acesso valem na próxima vez que você ativar o servidor (ou reative para aplicar agora)."
+
+msgid "Game"
+msgstr "Jogo"
+
+msgid "Game ID: {}"
+msgstr "Game ID: {}"
+
+msgid "Media: {}"
+msgstr "Mídia: {}"
+
+msgid "Information (shown in OPL)"
+msgstr "Informações (exibidas no OPL)"
+
+msgid "Title"
+msgstr "Título"
+
+msgid "Overrides the name shown in OPL"
+msgstr "Sobrescreve o nome exibido no OPL"
+
+msgid "Genre"
+msgstr "Gênero"
+
+msgid "Release"
+msgstr "Lançamento"
+
+msgid "e.g. 2005-03-22, 2005 or \"June 24, 2007\""
+msgstr "ex.: 2005-03-22, 2005 ou \"24 de junho de 2007\""
+
+msgid "Developer"
+msgstr "Desenvolvedor"
+
+msgid "Description"
+msgstr "Descrição"
+
+msgid "Each field accepts up to 255 characters (OPL limit). An empty field removes the data from the game."
+msgstr "Cada campo aceita até 255 caracteres (limite do OPL). Campo vazio remove o dado do jogo."
+
+msgid "Information"
+msgstr "Informações"
+
+msgid "This game has no readable Game ID, so OPL cannot match a metadata file (CFG/<GameID>.cfg). Editing is unavailable for it."
+msgstr "Este jogo não tem um Game ID legível, então o OPL não consegue casar um arquivo de metadados (CFG/<GameID>.cfg). A edição fica indisponível para ele."
+
+msgid "← Cancel"
+msgstr "← Cancelar"
+
+msgid "Save metadata"
+msgstr "Salvar metadados"

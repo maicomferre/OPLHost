@@ -52,7 +52,7 @@ Consequências para a implementação:
 - **System Tray:** feature opcional de fase tardia, atrás de feature flag. **A janela principal e toda a lógica de servidor funcionam 100% sem tray.** Nunca amarrar o ciclo de vida do app ao tray. Em Wayland o caminho é SNI/StatusNotifierItem sobre D-Bus (crate de referência: `ksni`).
 - **D-Bus / Polkit:** crate `zbus`.
 - **Serialização:** `serde` + `serde_json` (para `opl_meta.json`).
-- **i18n:** `fluent` (fluent-rs), pt-BR e en-US embutidos no início.
+- **i18n (abordagem híbrida — ver `plans/fase-3-i18n.md`):** strings estáticas do `.slint` via **Slint `@tr` + traduções `.po` bundladas** no binário (`with_bundled_translations` / `slint::select_bundled_translation`); strings dinâmicas montadas em Rust via **`fluent` (fluent-rs)** com `.ftl` embutidos. pt-BR e en-US embutidos no início; **idioma-fonte = en-US** (msgid/base em inglês, pt-BR é tradução).
 - **FTP (opcional, fase tardia):** `suppaftp`, só se o cenário USB/console for incorporado.
 
 ---
