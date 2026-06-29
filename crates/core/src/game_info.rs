@@ -124,116 +124,6 @@ impl std::fmt::Display for FieldError {
     }
 }
 
-/// Erro de normalização do campo Lançamento: o usuário digitou algo que *parece*
-/// uma data (só dígitos e separadores) mas não é válida.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReleaseError(pub String);
-
-impl std::fmt::Display for ReleaseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ReleaseError {}
-
-/// Dias no mês, ciente de ano bissexto. Usado para validar a data do Lançamento.
-fn days_in_month(year: u32, month: u32) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            let leap =
-                (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
-            if leap { 29 } else { 28 }
-        }
-        _ => 0,
-    }
-}
-
-/// Normaliza/valida o campo **Lançamento** (`Release`).
-///
-/// O OPL **não** interpreta esse campo como data — exibe o texto verbatim
-/// (`src/themes.c`). Então não há formato obrigatório do ponto de vista do OPL.
-/// Mesmo assim, sanitizamos para o usuário não gravar uma "data" sem sentido:
-///
-/// - Vazio → `Ok(None)` (remove a chave).
-/// - Contém letra (ex.: "Verão de 2007") → texto livre, devolvido como veio
-///   (o OPL aceita; não temos como adivinhar uma data ali).
-/// - Só dígitos e separadores → interpretado como data e **canonizado**:
-///   `AAAA`, `AAAA-MM` ou `AAAA-MM-DD` (zero-padded). Aceita ordem
-///   `AAAA-MM-DD` ou `DD/MM/AAAA` (decidida por qual extremo tem 4 dígitos).
-///   Data fora de faixa (mês > 12, dia inexistente) → `Err`. Ano de 2 dígitos
-///   (ambíguo) → `Err`, pedindo o ano com 4 dígitos.
-pub fn normalize_release(raw: &str) -> Result<Option<String>, ReleaseError> {
-    let t = raw.trim();
-    if t.is_empty() {
-        return Ok(None);
-    }
-    // Tem letra → texto livre; o OPL mostra como veio.
-    if t.chars().any(char::is_alphabetic) {
-        return Ok(Some(t.to_string()));
-    }
-
-    let invalid = || {
-        Err(ReleaseError(format!(
-            "\"{t}\" não é uma data válida. Use AAAA-MM-DD, DD/MM/AAAA ou só o ano \
-             (ou escreva por extenso)."
-        )))
-    };
-
-    // Só dígitos e separadores: quebra nos não-dígitos.
-    let parts: Vec<&str> = t
-        .split(|c: char| !c.is_ascii_digit())
-        .filter(|s| !s.is_empty())
-        .collect();
-    let nums: Vec<u32> = parts.iter().filter_map(|p| p.parse().ok()).collect();
-    if nums.len() != parts.len() {
-        return invalid(); // número grande demais p/ u32 etc.
-    }
-
-    let valid_year = |y: u32| (1000..=2999).contains(&y);
-
-    match (parts.as_slice(), nums.as_slice()) {
-        // Só o ano.
-        ([y], [year]) if y.len() == 4 && valid_year(*year) => Ok(Some(year.to_string())),
-        // Ano-mês, em qualquer ordem (o de 4 dígitos é o ano).
-        ([a, b], [na, nb]) => {
-            let (year, month) = if a.len() == 4 {
-                (*na, *nb)
-            } else if b.len() == 4 {
-                (*nb, *na)
-            } else {
-                return invalid();
-            };
-            if valid_year(year) && (1..=12).contains(&month) {
-                Ok(Some(format!("{year:04}-{month:02}")))
-            } else {
-                invalid()
-            }
-        }
-        // Ano-mês-dia: AAAA-MM-DD ou DD-MM-AAAA (4 dígitos num dos extremos).
-        ([a, _, c], [na, nb, nc]) => {
-            let (year, month, day) = if a.len() == 4 {
-                (*na, *nb, *nc)
-            } else if c.len() == 4 {
-                (*nc, *nb, *na)
-            } else {
-                return invalid();
-            };
-            if valid_year(year)
-                && (1..=12).contains(&month)
-                && (1..=days_in_month(year, month)).contains(&day)
-            {
-                Ok(Some(format!("{year:04}-{month:02}-{day:02}")))
-            } else {
-                invalid()
-            }
-        }
-        _ => invalid(),
-    }
-}
-
 /// Uma linha do `.cfg`: ou um par `chave=valor`, ou uma linha "crua" (em branco
 /// ou que não casou `=`) preservada tal qual para round-trip fiel.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -510,65 +400,19 @@ mod tests {
     }
 
     #[test]
-    fn release_vazio_vira_none() {
-        assert_eq!(normalize_release("   "), Ok(None));
-    }
+    fn release_e_texto_livre_no_limite_de_caracteres() {
+        // O OPL exibe Release verbatim (não parseia data), então qualquer texto
+        // vale — sujeito só ao limite de 255 (validado como os demais campos).
+        let info = GameInfo {
+            release: Some("24 de junho de 2007".into()),
+            ..Default::default()
+        };
+        assert!(info.validate().is_empty());
 
-    #[test]
-    fn release_canonico_passa_e_zera_pad() {
-        assert_eq!(
-            normalize_release("2007-3-1"),
-            Ok(Some("2007-03-01".to_string()))
-        );
-        assert_eq!(
-            normalize_release("2005-03-22"),
-            Ok(Some("2005-03-22".to_string()))
-        );
-    }
-
-    #[test]
-    fn release_formato_br_e_reordenado_para_iso() {
-        assert_eq!(
-            normalize_release("24/06/2007"),
-            Ok(Some("2007-06-24".to_string()))
-        );
-    }
-
-    #[test]
-    fn release_so_ano_ou_ano_mes() {
-        assert_eq!(normalize_release("2007"), Ok(Some("2007".to_string())));
-        assert_eq!(
-            normalize_release("03/2007"),
-            Ok(Some("2007-03".to_string()))
-        );
-    }
-
-    #[test]
-    fn release_data_like_invalida_e_rejeitada() {
-        // O caso do usuário: 2007-03-132.
-        assert!(normalize_release("2007-03-132").is_err());
-        // Mês inexistente.
-        assert!(normalize_release("2007-13-01").is_err());
-        // 29 de fev em ano não-bissexto.
-        assert!(normalize_release("2007-02-29").is_err());
-        // Ano de 2 dígitos: ambíguo → erro pedindo 4 dígitos.
-        assert!(normalize_release("12/06/07").is_err());
-    }
-
-    #[test]
-    fn release_29_fev_bissexto_passa() {
-        assert_eq!(
-            normalize_release("2008-02-29"),
-            Ok(Some("2008-02-29".to_string()))
-        );
-    }
-
-    #[test]
-    fn release_texto_livre_com_letras_passa_verbatim() {
-        // OPL exibe verbatim; não tentamos adivinhar uma data.
-        assert_eq!(
-            normalize_release("Verão de 2007"),
-            Ok(Some("Verão de 2007".to_string()))
-        );
+        let longo = GameInfo {
+            release: Some("a".repeat(OPL_VALUE_MAX_LEN + 1)),
+            ..Default::default()
+        };
+        assert_eq!(longo.validate().len(), 1);
     }
 }

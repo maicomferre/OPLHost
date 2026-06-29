@@ -20,7 +20,7 @@ pub use domain::{BackendError, ServerStatus, ShareAuth, ShareConfig};
 pub use game_id::{GameId, derive_title, parse_boot2_game_id};
 pub use game_info::{
     FieldError, FieldErrorKind, GameCfg, GameInfo, GameInfoError, GameInfoStore, OPL_VALUE_MAX_LEN,
-    ReleaseError, cfg_file_name, normalize_release,
+    cfg_file_name,
 };
 pub use meta::{GameMeta, MediaKind, MetaError, MetaStore, OplMeta};
 pub use opl_layout::{create_opl_layout, is_opl_subdir_name};

@@ -377,7 +377,7 @@ export component AppWindow inherits Window {
                         color: #888;
                     }
                     LineEdit {
-                        placeholder-text: "AAAA-MM-DD (aceita DD/MM/AAAA ou só o ano)";
+                        placeholder-text: "ex.: 2005-03-22, 2005 ou \"24 de junho de 2007\"";
                         text <=> root.field-release;
                         enabled: !root.busy;
                     }
