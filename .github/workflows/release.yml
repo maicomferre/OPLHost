@@ -57,10 +57,15 @@ jobs:
       - name: Gera o .deb
         run: cargo deb -p oplhost
 
-      - name: Publica a Release
+      - name: Publica a Release (rascunho)
         uses: softprops/action-gh-release@v2
         with:
           files: target/debian/*.deb
+          # Cria como rascunho: o repositório usa "immutable releases", então a
+          # release publicada não aceita upload de asset depois. Drafts são
+          # mutáveis, então o .deb é anexado aqui e a publicação fica manual
+          # (clicar em "Publish" na página de Releases) — gate explícito.
+          draft: true
           # Todas as versões são alpha → sempre pre-release.
           prerelease: ${{ contains(github.ref_name, 'alpha') }}
           generate_release_notes: true
