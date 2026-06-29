@@ -9,6 +9,7 @@
 pub mod art;
 pub mod dialog;
 pub mod firewall;
+pub mod fs_settings_store;
 pub mod iso;
 pub mod meta_store;
 pub mod net;
@@ -20,6 +21,7 @@ pub mod smb_script;
 
 pub use art::{ArtError, ArtProvider, ArtType, FetchOutcome, HttpGet, UreqClient};
 pub use firewall::{FirewallManager, Protocol};
+pub use fs_settings_store::FsSettingsStore;
 pub use meta_store::JsonMetaStore;
 pub use privilege::{PkexecEscalator, PrivilegeEscalator};
 pub use real_fs::RealFs;
