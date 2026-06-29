@@ -14,10 +14,13 @@
 use std::path::{Path, PathBuf};
 
 use oplhost_core::{
-    GameMeta, MediaKind, MetaStore, OplMeta, ServerStatus, ShareAuth, ShareConfig, StorageBackend,
-    create_opl_layout, is_opl_subdir_name, summarize,
+    AppSettings, GameMeta, MediaKind, MetaStore, OplMeta, SETTINGS_VERSION, ServerStatus,
+    SettingsStore, ShareAuth, ShareConfig, StorageBackend, create_opl_layout, is_opl_subdir_name,
+    summarize,
 };
-use oplhost_infra::{ArtProvider, JsonMetaStore, RealFs, SmbBackend, dialog, iso, net, scan};
+use oplhost_infra::{
+    ArtProvider, FsSettingsStore, JsonMetaStore, RealFs, SmbBackend, dialog, iso, net, scan,
+};
 use slint::{ModelRc, VecModel};
 
 slint::include_modules!();
@@ -110,7 +113,33 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_server_active(active);
     // Usuário do share autenticado = dono da pasta (conta já existente no sistema).
     ui.set_auth_username(current_user().into());
+
+    // Restaura o estado não-sensível da última sessão (diretório-alvo + toggle de
+    // auth) do config.json (XDG). Config ausente/corrompida cai em default — o app
+    // funciona normalmente sem ela (§6). A senha NUNCA é restaurada: vive no Samba.
+    let restored = load_settings();
+    if let Some(dir) = &restored.last_target_dir {
+        ui.set_dir_path(dir.display().to_string().into());
+    }
+    ui.set_auth_enabled(restored.auth_required);
     apply_dir_hint(&ui);
+
+    // Se havia um diretório válido salvo, recarrega o catálogo dele em background
+    // (leitura de disco, sem Polkit) para a lista já aparecer preenchida.
+    if let Some(dir) = restored.last_target_dir.filter(|d| d.is_dir()) {
+        spawn_job(
+            &ui,
+            "Recarregando catálogo do último diretório…",
+            move || {
+                let (rows, summary) = build_catalog(&dir);
+                UiUpdate {
+                    rows: Some(rows),
+                    summary: Some(summary),
+                    ..Default::default()
+                }
+            },
+        );
+    }
 
     // Controle único do servidor: o mesmo botão ativa (apply) ou desativa
     // (rollback) conforme o estado real, evitando os dois botões conflitantes.
@@ -208,6 +237,30 @@ fn current_user() -> String {
     std::env::var("USER").unwrap_or_else(|_| "nobody".to_string())
 }
 
+/// Lê o estado de UI persistido (XDG). Sem store disponível (sem HOME) → default.
+fn load_settings() -> AppSettings {
+    FsSettingsStore::new().map(|s| s.load()).unwrap_or_default()
+}
+
+/// Persiste o estado **não-sensível** da UI (diretório-alvo + toggle de auth) no
+/// `config.json` (XDG), best-effort. A senha **nunca** entra aqui — vive no Samba
+/// do sistema. Falha de gravação é silenciosa (só loga): persistência é
+/// conveniência e não pode atrapalhar a operação principal.
+fn save_settings(last_target_dir: Option<PathBuf>, auth_required: bool) {
+    let Some(store) = FsSettingsStore::new() else {
+        return;
+    };
+    let settings = AppSettings {
+        version: SETTINGS_VERSION,
+        last_target_dir,
+        auth_required,
+        auth_username: Some(current_user()),
+    };
+    if let Err(e) = store.save(&settings) {
+        eprintln!("[oplhost] não foi possível salvar config.json: {e}");
+    }
+}
+
 fn share_config(target: &Path, auth: ShareAuth) -> ShareConfig {
     ShareConfig {
         target_dir: target.to_path_buf(),
@@ -290,12 +343,17 @@ fn handle_choose_dir(ui: &AppWindow) {
         "" => None,
         s => Some(PathBuf::from(s)),
     };
-    spawn_job(ui, "Selecionando pasta…", move || run_choose_dir(start));
+    let auth_enabled = ui.get_auth_enabled();
+    spawn_job(ui, "Selecionando pasta…", move || {
+        run_choose_dir(start, auth_enabled)
+    });
 }
 
-fn run_choose_dir(start: Option<PathBuf>) -> UiUpdate {
+fn run_choose_dir(start: Option<PathBuf>, auth_enabled: bool) -> UiUpdate {
     match dialog::pick_folder(start) {
         Some(path) => {
+            // Lembra o novo diretório escolhido para a próxima sessão (sem senha).
+            save_settings(Some(path.clone()), auth_enabled);
             let (rows, summary) = build_catalog(&path);
             UiUpdate {
                 dir: Some(path.display().to_string()),
@@ -389,6 +447,8 @@ fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUpdate
     let backend = SmbBackend::new(cfg.clone()).with_auth_password(pw);
     match backend.apply_config(&cfg) {
         Ok(()) => {
+            // Config aplicada com sucesso: persiste diretório + toggle (sem senha).
+            save_settings(Some(target.to_path_buf()), auth_enabled);
             let (status, active) = current_status();
             let (rows, summary) = build_catalog(target);
             UiUpdate {
