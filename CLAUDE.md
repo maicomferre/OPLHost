@@ -12,7 +12,7 @@ Este é o documento de **regras** do projeto e a fonte de verdade de estrutura e
 
 Consequências para a implementação:
 
-- O `opl_share.conf` gerado **deve forçar protocolo legado**. Esqueleto de referência, **validado na Fase 0 com Samba 4.23.6** (NT1 guest lê e escreve — ver `plans/fase-0-spike.md`). Valores podem variar por versão do Samba; reconfirmar com `testparm` ao mudar de ambiente:
+- O `opl_share.conf` gerado **deve forçar protocolo legado**. Esqueleto de referência (acesso **guest**), **validado na Fase 0 com Samba 4.23.6** (NT1 guest lê e escreve — ver `plans/fase-0-spike.md`). Valores podem variar por versão do Samba; reconfirmar com `testparm` ao mudar de ambiente:
 
   ```ini
   [global]
@@ -30,6 +30,7 @@ Consequências para a implementação:
      force user = <usuario_dono_da_pasta>
   ```
 
+- A Fase 2 acrescentou um ramo de **autenticação opcional** (`guest ok = no` + `valid users = <usuario>`, senha via `smbpasswd`) e o `chmod 644` determinístico do conf (status lido sem root). O esqueleto acima é só o caso guest — ver `plans/fase-2-biblioteca.md`.
 - O sistema loga avisos do tipo "Weak crypto is allowed" e "lanman auth deprecated". **Isso é esperado.** A UI **deve comunicar** ao usuário que o app reabilita um protocolo legado por exigência do OPL — transparência é requisito de UX.
 - Porta padrão **445** (configurável como avançado; o OPL aceita portas alternativas).
 - **Isolamento (regra inegociável):** nunca editar o `/etc/samba/smb.conf` global diretamente. Injetar apenas a linha `include = /etc/samba/opl_share.conf` e gerenciar todo o conteúdo legado nesse arquivo isolado. Rollback = remover o arquivo + a linha de include.
@@ -68,8 +69,8 @@ Três camadas. Inversão de dependência via **Traits** para permitir mocking e 
 - **Define os Traits** (ports) que a infraestrutura implementa.
 
 ### `infrastructure` (adapters — implementações reais)
-- `StorageBackend` (Trait genérico, **não casado com SMB**): `start`, `stop`, `status`, `apply_config`, `rollback`. Primeira implementação: `SmbBackend`. Há um segundo backend (UDPBD) no horizonte (§7.1); o Trait deve acomodá-lo sem refatoração dolorosa. **Nunca assumir no código que "o alvo é sempre uma pasta SMB com smb.conf".**
-- `SmbBackend`: gera `opl_share.conf`, injeta/remove o include, controla `smbd`.
+- `StorageBackend` (Trait genérico, **não casado com SMB**): `apply_config`, `status`, `rollback`. **Sem `start`/`stop`** (decisão da Fase 2): dar start/stop no `smbd` global viola o isolamento (§0) e quebra outros usos do Samba na máquina — o modelo é "aplicar/remover a config do OPL", e o app só dá `reload`. Controle de ciclo de vida de processo só será reavaliado com o `UdpbdBackend` (§7.1), quando a abstração for revisitada com os dois casos concretos na mão. Primeira implementação: `SmbBackend`. **Nunca assumir no código que "o alvo é sempre uma pasta SMB com smb.conf".**
+- `SmbBackend`: gera `opl_share.conf`, injeta/remove o include, dá `reload` no `smbd` (não start/stop global).
 - `FirewallManager`: detecta `ufw` (ativo/inativo) → cria regra (porta depende do backend: TCP 445 para SMB); fallback `iptables`; persistência via `iptables-persistent`.
 - `PrivilegeEscalator`: dispara o prompt nativo do Polkit para operações root.
 - `ArtProvider` (fase 2): lê/baixa art das fontes externas (§7).
@@ -105,7 +106,7 @@ Manipulação de ISOs: **não copiar/mover arquivos grandes entre partições.**
 
 ## 5. Privilégios (Polkit) e Firewall
 
-- App roda em **user-space**. Operações root (reiniciar `smbd`, mexer no firewall, criar `opl_share.conf` em `/etc/samba/`) disparam o **Polkit** para o prompt nativo de senha.
+- App roda em **user-space**. Operações root (recarregar — `reload` — o `smbd`, mexer no firewall, criar `opl_share.conf` em `/etc/samba/`) disparam o **Polkit** para o prompt nativo de senha.
 - **Agrupar operações root numa única "janela de privilégio"** sempre que possível, para não pedir senha repetidamente. (Validado na Fase 0: script único via um `pkexec`.)
 - Rotina de firewall na janela root: verificar `ufw` → se ativo e sem regra SMB, criar; se ausente/inativo, fallback `iptables`; garantir persistência.
 
@@ -168,20 +169,23 @@ O ecossistema OPL caminha para tratar rede, USB e iLink como "block devices" int
 
 ## 11. Roadmap por fases
 
-### Fase 0 — Spike de validação (gate obrigatório) — ver `plans/fase-0-spike.md`
-Binário descartável que prova a conexão SMBv1. **Validado localmente** (Samba 4.23.6, NT1 guest lê/escreve); pendente apenas a confirmação com PS2/OPL real. Só então o spike é removido e a fase, concluída.
+### Fase 0 — Spike de validação (gate obrigatório) — ✅ Concluída — ver `plans/fase-0-spike.md`
+Binário descartável que provou a conexão SMBv1. Validado localmente (Samba 4.23.6, NT1 guest lê/escreve) **e confirmado com PS2/OPL real**; spike removido.
 
-### Fase 1 — Núcleo funcional — ver `plans/fase-1-nucleo.md`
+### Fase 1 — Núcleo funcional — ✅ Concluída — ver `plans/fase-1-nucleo.md`
 - Workspace `core`/`infrastructure`/`ui` com Traits definidos a partir da Fase 0.
-- GUI Slint: status do servidor, seleção de diretório, start/stop, IP e instruções.
+- GUI Slint: status do servidor, seleção de diretório, ativar/desativar, IP e instruções.
 - Geração/rollback do share isolado. Firewall. Polkit.
 - Injeção da estrutura de pastas OPL. `opl_meta.json`. Testes do `core` ≥ 70%. Empacotamento `.deb`.
 
-### Fase 2 — Biblioteca e metadados
+### Fase 2 — Biblioteca e metadados — ✅ Concluída (validada em campo) — ver `plans/fase-2-biblioteca.md`
 - Listagem rica do catálogo (CD/DVD). Consumo de art databases externos (Kira / danielb-archive.org). Categorização, contagem, tamanho em disco. Autenticação usuário/senha opcional no share.
 
-### Fase 3 — Refinamento e opcionais
-- i18n com arquivos externos para a comunidade. System tray (atrás de flag, SNI/`ksni`). **`UdpbdBackend`** via supervisão de servidor existente (refatorar `StorageBackend` aqui, com SMB como segundo caso concreto). FTP remoto (opcional, `suppaftp`). Integração com listas de compatibilidade por jogo.
+### Fase 3 — Refinamento e opcionais — 🚧 Em andamento
+- ✅ **i18n** pt-BR/en-US (abordagem híbrida) — `plans/fase-3-i18n.md`.
+- ✅ **Persistência de estado da UI** (XDG) + polish de ícone/.deb — `plans/fase-3-persistencia-ui.md`.
+- 🚧 **Editor de metadados do jogo** (`CFG/<GameID>.cfg`) — `plans/fase-3-editor-metadados.md`.
+- ⏳ Pendentes: System tray (atrás de flag, SNI/`ksni`); **`UdpbdBackend`** via supervisão de servidor existente (refatorar `StorageBackend` aqui, com SMB como segundo caso concreto); FTP remoto (opcional, `suppaftp`); listas de compatibilidade por jogo; traduções externas editáveis pela comunidade.
 
 ---
 

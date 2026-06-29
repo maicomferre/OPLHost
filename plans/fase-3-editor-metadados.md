@@ -1,7 +1,6 @@
 # Fase 3 — Editor de metadados do jogo (info do OPL: `CFG/<GameID>.cfg`)
 
-> Segundo item da Fase 3. O `CLAUDE.md` guarda as REGRAS; este arquivo guarda o
-> *porquê* e o andamento. Manter atualizado e commitar.
+> Segundo item da Fase 3. (Papel dos planos: ver `plans/README.md`.)
 
 - **Status:** Em andamento (core+infra+UI implementados; falta validar a gravação no PS2/OPL real)
 - **Criado em:** 2026-06-29
@@ -142,7 +141,6 @@ Estudo de `ps2homebrew/Open-PS2-Loader@master` (CLAUDE.md §7/§12):
 
 | Data | Mudança | Commit |
 |------|---------|--------|
-| 2026-06-29 | Plano criado; formato do OPL (`CFG/<id>.cfg`, 5 chaves) validado na fonte | `<pendente>` |
-| 2026-06-29 | `game_info.rs` (core) + `FsGameInfoStore` (infra) + editor in-place na UI; 16 testes novos, clippy/fmt limpos | `85d60a2` |
+| 2026-06-29 | Plano criado (formato `CFG/<id>.cfg`, 5 chaves, validado na fonte) + `game_info.rs` (core) + `FsGameInfoStore` (infra) + editor in-place na UI; 16 testes | `85d60a2` |
 | 2026-06-29 | Sanitização do Lançamento (`normalize_release`): canoniza/valida data, +7 testes | `74b0323` |
-| 2026-06-29 | Revertida a sanitização do Lançamento: campo é texto livre (OPL exibe verbatim), só limite de 255 chars | `<pendente>` |
+| 2026-06-29 | Revertida a sanitização do Lançamento: campo é texto livre (OPL exibe verbatim), só limite de 255 chars | `5dad96b` (PR #10 `0cbad3e`) |

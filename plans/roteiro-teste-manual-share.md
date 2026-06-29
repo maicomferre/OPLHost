@@ -1,11 +1,10 @@
-# Roteiro de teste manual — fechamento da Fase 2
+# Roteiro de teste manual do share SMB (reutilizável)
 
-> Validação fim-a-fim do que os testes automatizados não alcançam: conexão real
-> de um cliente SMB e do **OPL no PS2**, reconhecimento de capas, e o
-> comportamento do daemon no ambiente. Este roteiro é o **gate de fechamento da
-> Fase 2** — ao final, marcar os critérios pendentes em
-> `plans/fase-2-biblioteca.md` e só então abrir o PR `fase-2-biblioteca → main`
-> (CLAUDE.md §10: main só via PR).
+> Procedimento de regressão fim-a-fim do que os testes automatizados não
+> alcançam: conexão real de um cliente SMB e do **OPL no PS2**, reconhecimento de
+> capas, e o comportamento do daemon no ambiente. **Reexecutar a cada release ou
+> mudança no caminho SMB/Samba.** (A validação de campo que fechou a Fase 2 está
+> registrada em `plans/fase-2-biblioteca.md`.)
 >
 > **Modelo "aplicar/remover config" (decisão 2026-06-28):** o app **não** dá
 > start/stop no `smbd` global — ele grava o share isolado, injeta o `include` e
@@ -14,15 +13,15 @@
 > não liga o daemon). O **Status** na UI ("Rodando"/"Inativo") deriva de a config
 > do OPL estar aplicada (conf isolado + `include`), não do estado do daemon.
 
-## Mapa: o que este roteiro fecha
-Critérios ainda abertos em `plans/fase-2-biblioteca.md`:
+## Mapa: o que este roteiro cobre
 
-| Critério pendente | Onde validar aqui |
+| Cenário | Onde |
 |---|---|
-| Capa baixada por Game ID, gravada em `ART/`, **OPL reconhece** | Parte 3 |
+| Acesso guest (aplicar/conectar/reverter) | Parte 1 |
 | Autenticação real (cliente SMB com usuário/senha) | Parte 2 |
+| Capa por Game ID gravada em `ART/`, **OPL reconhece** | Parte 3 |
 | `reload smbd` aplica share novo (inclusive `[global]` NT1) | Parte 4.1 |
-| `opl_share.conf` criado sob `pkexec` legível (0644) p/ status sem root | Parte 4.2 |
+| `opl_share.conf` legível (0644) p/ status sem root | Parte 4.2 |
 
 ## Pré-requisitos
 - Máquina Linux com o oplhost (host do share). Samba 4.23.x instalado e o `smbd`
@@ -210,5 +209,4 @@ Para cada parte, anotar: conectou? leu? escreveu? guest foi recusado no modo
 autenticado? a capa apareceu no OPL? o reload bastou (sem restart)? o conf ficou
 644? a reversão limpou tudo? Versão do Samba do host e do OPL/BDM no PS2. Qualquer
 mensagem de erro literal (porta ocupada, Polkit negado, logon failure, 503 no
-art). Levar o resultado de volta para `plans/fase-2-biblioteca.md` (marcar os
-critérios) antes de abrir o PR para `main`.
+art). Registrar regressões no plano da fase correspondente.

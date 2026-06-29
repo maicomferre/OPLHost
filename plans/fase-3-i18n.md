@@ -1,7 +1,6 @@
 # Fase 3 — i18n (pt-BR / en-US), abordagem híbrida
 
-> Terceiro item da Fase 3. O `CLAUDE.md` guarda as REGRAS; este arquivo guarda o
-> *porquê* e o andamento. Manter atualizado e commitar.
+> Terceiro item da Fase 3. (Papel dos planos: ver `plans/README.md`.)
 
 - **Status:** Concluído (implementado e validado na GUI em en-US/pt-BR; bug de layout de startup corrigido)
 - **Criado em:** 2026-06-29
@@ -103,6 +102,5 @@ cai no `msgid`) e evita um `.po`/`.ftl` identidade para o inglês.
 
 | Data | Mudança | Commit |
 |------|---------|--------|
-| 2026-06-29 | Plano criado (i18n híbrido aprovado) | `<pendente>` |
-| 2026-06-29 | Implementado: `@tr`/`.po` (Slint) + fluent `.ftl` (Rust), detecção de locale, paridade testada; CLAUDE.md §2 atualizado | `<pendente>` |
-| 2026-06-29 | Validação na GUI (usuário): en-US e pt-BR OK. **Bug de layout** achado: em pt-BR o botão inferior nascia cortado e só aparecia ao entrar/sair de Configurações. **Causa real:** a `ListView` é `vertical-stretch`, então a janela nasce com a `preferred-height` da `Window` (740px), não com a altura do conteúdo; o pt-BR (aviso de SMBv1 mais longo) excedia 740px e cortava o botão. (Primeira hipótese — catálogo carregando em background depois do show — descartada: carregar síncrono ANTES do `run()` não resolveu.) **Correção:** `preferred-height` 740→820px, dimensionada pelo idioma mais longo. O catálogo segue carregando síncrono no startup só para evitar o flash vazio→preenchido. Removido o `progress-reload-catalog`. Validado na GUI pelo usuário. | `<pendente>` |
+| 2026-06-29 | Plano criado (i18n híbrido aprovado) + implementado: `@tr`/`.po` (Slint) + fluent `.ftl` (Rust), detecção de locale, paridade testada; CLAUDE.md §2 atualizado | `dffe881` |
+| 2026-06-29 | Validação na GUI (usuário): en-US e pt-BR OK. **Bug de layout** achado: em pt-BR o botão inferior nascia cortado e só aparecia ao entrar/sair de Configurações. **Causa real:** a `ListView` é `vertical-stretch`, então a janela nasce com a `preferred-height` da `Window` (740px), não com a altura do conteúdo; o pt-BR (aviso de SMBv1 mais longo) excedia 740px e cortava o botão. (Primeira hipótese — catálogo carregando em background depois do show — descartada: carregar síncrono ANTES do `run()` não resolveu.) **Correção:** `preferred-height` 740→820px, dimensionada pelo idioma mais longo. O catálogo segue carregando síncrono no startup só para evitar o flash vazio→preenchido. Removido o `progress-reload-catalog`. Validado na GUI pelo usuário. | `9df7e7f` (PR #11 `eb57225`) |

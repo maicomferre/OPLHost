@@ -77,4 +77,4 @@ avisos de crypto fraca são esperados e fazem parte do trade-off do OPL.
 |------|---------|--------|
 | 2026-06-26 | Spike criado e compilando; plano da fase aberto | `b8e355e` |
 | 2026-06-26 | Validação local OK (NT1 guest lê/escreve); pendente só o PS2 real | `71adb33` |
-| 2026-06-26 | PS2 real confirmado; rollback verificado; spike removido; fase Concluída | _(pendente)_ |
+| 2026-06-26 | PS2 real confirmado; rollback verificado; spike removido; fase Concluída | `44714bd` |
