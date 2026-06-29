@@ -126,11 +126,17 @@ fn build_auth_fragment(cfg: &ShareConfig, password: Option<&str>) -> String {
     }
 }
 
-/// Corpo do script root de APPLY: grava o conf isolado, injeta o include de
-/// forma idempotente, (opcionalmente) cria o usuário Samba, **recarrega** o
-/// `smbd` e abre a porta no firewall. Tudo numa única janela de privilégio
-/// quando entregue ao `PrivilegeEscalator`. `password` só é usado no modo
-/// autenticado.
+/// Corpo do script root de APPLY: grava o conf isolado (com `chmod 644`
+/// explícito), injeta o include de forma idempotente, (opcionalmente) cria o
+/// usuário Samba, **recarrega** o `smbd` e abre a porta no firewall. Tudo numa
+/// única janela de privilégio quando entregue ao `PrivilegeEscalator`. `password`
+/// só é usado no modo autenticado.
+///
+/// O `chmod 644` é deliberado: o `status()` lê o `opl_share.conf` **sem root**
+/// (assume world-readable). Sem ele, a permissão dependeria do umask do `pkexec`
+/// — em campo (2026-06-28) saiu `664` com umask 002, e poderia sair `600` em
+/// outro ambiente, quebrando o status. Fixar 0644 torna o comportamento
+/// determinístico (CLAUDE.md §12: não assumir valores do ambiente).
 ///
 /// Usa `systemctl reload smbd` (não `restart`): recarregar aplica o novo share
 /// sem derrubar conexões nem interromper outros usos do Samba na máquina (§0;
@@ -148,6 +154,7 @@ pub fn build_apply_script(paths: &SmbPaths, cfg: &ShareConfig, password: Option<
 
     format!(
         "cat > {share_conf} <<'OPLEOF'\n{conf}OPLEOF\n\
+         chmod 644 {share_conf}\n\
          \n\
          if ! grep -qxF '{include}' {smb_conf}; then\n\
          \x20 printf '\\n{MARKER}\\n{include}\\n' >> {smb_conf}\n\
@@ -251,6 +258,9 @@ mod tests {
         let s = build_apply_script(&SmbPaths::default(), &cfg(), None);
         // heredoc grava o conf isolado
         assert!(s.contains("cat > /etc/samba/opl_share.conf <<'OPLEOF'"));
+        // 0644 explícito: o status() lê o conf sem root; não depender do umask
+        // do pkexec (visto 664 com umask 002 em campo).
+        assert!(s.contains("chmod 644 /etc/samba/opl_share.conf"));
         // include idempotente: só anexa se ainda não existe
         assert!(s.contains("grep -qxF 'include = /etc/samba/opl_share.conf' /etc/samba/smb.conf"));
         // reload (não restart): não derruba conexões nem outros usos do Samba

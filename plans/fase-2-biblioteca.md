@@ -8,7 +8,7 @@
 - **Status:** Concluída (pendente PR para `main`) — todos os 4 critérios de
   aceitação fechados e **validados em campo** com PS2 + OPL v1.2.0-beta-2012
   (2026-06-28). Achados de campo viram backlog pós-fase (Fase 3), não bloqueiam o
-  fechamento. Residual: um `stat` de 0644 que o usuário roda na máquina.
+  fechamento. Residual de 0644 resolvido: `chmod 644` explícito no apply.
 - **Criado em:** 2026-06-27
 - **Última atualização:** 2026-06-28 (validação em campo PS2+OPL: guest, auth
   real, `reload` e capas OK → fase pronta para PR; fixes de UX: filtro de
@@ -81,10 +81,11 @@ share.
       Pendência residual: comportamento quando o `smbd` está **parado** (o app não
       liga o daemon global; o reload pressupõe Samba já habilitado) — documentar a
       mensagem ao usuário nesse cenário.
-- [ ] **Status derivado da config** — `status()` agora lê `opl_share.conf` +
-      `include` (sem root, arquivos world-readable). Confirmar que o
-      `opl_share.conf` criado sob `pkexec` fica legível (0644) para o usuário ler o
-      status sem privilégio.
+- [x] **Status derivado da config** — `status()` lê `opl_share.conf` + `include`
+      (sem root, arquivos world-readable). **Validado em campo (2026-06-28):** o
+      conf saiu `664` (umask 002 do `pkexec`), já world-readable. Para não depender
+      do umask, o apply passou a fazer `chmod 644` explícito (determinístico,
+      §12) — coberto por teste.
 
 ## Tarefas
 - [x] `core`: tipo `GameId` (normalização/validação do formato `LLLL_NNN.NN`) e
