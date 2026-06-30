@@ -6,6 +6,7 @@
 //! com mocks e independente da troca de backend (SMB hoje, UDPBD amanhã).
 
 pub mod catalog;
+pub mod compat;
 pub mod domain;
 pub mod game_id;
 pub mod game_info;
@@ -16,6 +17,7 @@ pub mod ports;
 pub mod settings;
 
 pub use catalog::{CatalogSummary, GameEntry, Media, is_game_image_name, summarize};
+pub use compat::{CONFIG_ITEM_COMPAT, CompatFlags, CompatMode};
 pub use domain::{BackendError, ServerStatus, ShareAuth, ShareConfig};
 pub use game_id::{GameId, derive_title, parse_boot2_game_id};
 pub use game_info::{

@@ -185,7 +185,8 @@ Binário descartável que provou a conexão SMBv1. Validado localmente (Samba 4.
 - ✅ **i18n** pt-BR/en-US (abordagem híbrida) — `plans/fase-3-i18n.md`.
 - ✅ **Persistência de estado da UI** (XDG) + polish de ícone/.deb — `plans/fase-3-persistencia-ui.md`.
 - 🚧 **Editor de metadados do jogo** (`CFG/<GameID>.cfg`) — `plans/fase-3-editor-metadados.md`.
-- ⏳ Pendentes: System tray (atrás de flag, SNI/`ksni`); **`UdpbdBackend`** via supervisão de servidor existente (refatorar `StorageBackend` aqui, com SMB como segundo caso concreto); FTP remoto (opcional, `suppaftp`); listas de compatibilidade por jogo; traduções externas editáveis pela comunidade.
+- 🚧 **Listas de compatibilidade por jogo** (`$Compatibility` no mesmo `.cfg`) — `plans/fase-3-compatibilidade.md` (core+infra+UI prontos; falta validar no PS2 real).
+- ⏳ Pendentes: System tray (atrás de flag, SNI/`ksni`); **`UdpbdBackend`** via supervisão de servidor existente (refatorar `StorageBackend` aqui, com SMB como segundo caso concreto); FTP remoto (opcional, `suppaftp`); traduções externas editáveis pela comunidade.
 
 ---
 

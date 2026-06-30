@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use oplhost_core::{GameId, GameInfo, GameInfoStore, derive_title};
+use oplhost_core::{CompatFlags, CompatMode, GameId, GameInfo, GameInfoStore, derive_title};
 use oplhost_infra::FsGameInfoStore;
 use slint::Model;
 
@@ -100,17 +100,22 @@ pub fn handle_game_clicked(ui: &AppWindow, idx: i32) {
     ui.set_editor_media(row.media.clone());
     ui.set_editor_note("".into());
     set_editor_fields(ui, &GameInfo::default());
+    set_editor_compat(ui, &CompatFlags::default());
     ui.set_editor_has_cover(false);
 
     match GameId::parse(row.game_id.as_str()) {
         Some(id) => {
             ui.set_editor_game_id(id.as_str().into());
             ui.set_editor_can_edit(true);
-            match FsGameInfoStore::new(&target).load(&id) {
+            let store = FsGameInfoStore::new(&target);
+            match store.load(&id) {
                 Ok(info) => set_editor_fields(ui, &info),
                 Err(e) => ui.set_editor_note(
                     t_args("msg-cannot-read-meta", &[("error", e.to_string())]).into(),
                 ),
+            }
+            if let Ok(flags) = store.load_compat(&id) {
+                set_editor_compat(ui, &flags);
             }
             load_cover(ui, &target, &id);
         }
@@ -131,6 +136,31 @@ fn set_editor_fields(ui: &AppWindow, info: &GameInfo) {
     ui.set_field_release(s(&info.release));
     ui.set_field_developer(s(&info.developer));
     ui.set_field_description(s(&info.description));
+}
+
+/// Marca os 6 checkboxes de compatibilidade a partir do bitmask lido do `.cfg`.
+fn set_editor_compat(ui: &AppWindow, flags: &CompatFlags) {
+    ui.set_compat_mode1(flags.is_set(CompatMode::AccurateReads));
+    ui.set_compat_mode2(flags.is_set(CompatMode::SynchronousMode));
+    ui.set_compat_mode3(flags.is_set(CompatMode::UnhookSyscalls));
+    ui.set_compat_mode4(flags.is_set(CompatMode::SkipVideos));
+    ui.set_compat_mode5(flags.is_set(CompatMode::EmulateDvdDl));
+    ui.set_compat_mode6(flags.is_set(CompatMode::DisableIgr));
+}
+
+/// Aplica os 6 checkboxes do editor **sobre** o bitmask atual (`base`), mexendo
+/// só nos 6 bits expostos. Partir do valor do disco preserva os bits 7/8 (Modes
+/// sem UI) — `apply_compat` reescreve a chave inteira, então a preservação tem de
+/// ser no nível de bit, não só de chave.
+fn read_editor_compat(ui: &AppWindow, base: CompatFlags) -> CompatFlags {
+    let mut flags = base;
+    flags.set(CompatMode::AccurateReads, ui.get_compat_mode1());
+    flags.set(CompatMode::SynchronousMode, ui.get_compat_mode2());
+    flags.set(CompatMode::UnhookSyscalls, ui.get_compat_mode3());
+    flags.set(CompatMode::SkipVideos, ui.get_compat_mode4());
+    flags.set(CompatMode::EmulateDvdDl, ui.get_compat_mode5());
+    flags.set(CompatMode::DisableIgr, ui.get_compat_mode6());
+    flags
 }
 
 /// Carrega a capa `ART/<id>_COV.{png,jpg}` no editor, se existir. Falha é
@@ -171,7 +201,16 @@ pub fn handle_save_game_info(ui: &AppWindow) {
     };
 
     let target = PathBuf::from(ui.get_dir_path().to_string().trim());
-    match FsGameInfoStore::new(&target).save(&id, &info) {
+    let store = FsGameInfoStore::new(&target);
+
+    // Compat parte do valor atual do disco para preservar bits sem UI (7/8).
+    let base = store.load_compat(&id).unwrap_or_default();
+    let flags = read_editor_compat(ui, base);
+
+    let result = store
+        .save(&id, &info)
+        .and_then(|()| store.save_compat(&id, &flags));
+    match result {
         Ok(()) => {
             update_row_title(ui, &info);
             ui.set_show_game_editor(false);

@@ -78,6 +78,13 @@ export component AppWindow inherits Window {
     in-out property <string> field-release: "";
     in-out property <string> field-developer: "";
     in-out property <string> field-description: "";
+    // Modos de compatibilidade do OPL (bits de $Compatibility no mesmo .cfg).
+    in-out property <bool> compat-mode1: false;
+    in-out property <bool> compat-mode2: false;
+    in-out property <bool> compat-mode3: false;
+    in-out property <bool> compat-mode4: false;
+    in-out property <bool> compat-mode5: false;
+    in-out property <bool> compat-mode6: false;
     // Dica contextual sobre o diretório-alvo (dinâmica, montada em Rust).
     in property <string> dir-hint: "";
     in property <bool> dir-hint-warning: false;
@@ -406,6 +413,49 @@ export component AppWindow inherits Window {
                     }
                     Text {
                         text: @tr("Each field accepts up to 255 characters (OPL limit). An empty field removes the data from the game.");
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        color: #888;
+                    }
+                }
+            }
+
+            if root.editor-can-edit: GroupBox {
+                title: @tr("Compatibility modes (OPL)");
+                VerticalBox {
+                    spacing: 4px;
+                    CheckBox {
+                        text: @tr("Mode 1: Accurate Reads");
+                        checked <=> root.compat-mode1;
+                        enabled: !root.busy;
+                    }
+                    CheckBox {
+                        text: @tr("Mode 2: Synchronous Mode");
+                        checked <=> root.compat-mode2;
+                        enabled: !root.busy;
+                    }
+                    CheckBox {
+                        text: @tr("Mode 3: Unhook Syscalls");
+                        checked <=> root.compat-mode3;
+                        enabled: !root.busy;
+                    }
+                    CheckBox {
+                        text: @tr("Mode 4: Skip Videos");
+                        checked <=> root.compat-mode4;
+                        enabled: !root.busy;
+                    }
+                    CheckBox {
+                        text: @tr("Mode 5: Emulate DVD-DL");
+                        checked <=> root.compat-mode5;
+                        enabled: !root.busy;
+                    }
+                    CheckBox {
+                        text: @tr("Mode 6: Disable IGR");
+                        checked <=> root.compat-mode6;
+                        enabled: !root.busy;
+                    }
+                    Text {
+                        text: @tr("Per-game OPL load fixes. Leave all unchecked unless a game needs one.");
                         font-size: 12px;
                         wrap: word-wrap;
                         color: #888;

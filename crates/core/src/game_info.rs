@@ -16,6 +16,7 @@
 //! no adapter `FsGameInfoStore` da infraestrutura (inversão do §3, como o
 //! `MetaStore`/`JsonMetaStore`).
 
+use crate::compat::CompatFlags;
 use crate::game_id::GameId;
 
 /// Chave do OPL para o título exibido (sobrescreve o nome derivado do arquivo).
@@ -244,6 +245,12 @@ pub trait GameInfoStore {
     fn load(&self, game_id: &GameId) -> Result<GameInfo, GameInfoError>;
     /// Grava o info preservando as demais chaves do `.cfg`.
     fn save(&self, game_id: &GameId, info: &GameInfo) -> Result<(), GameInfoError>;
+    /// Lê o bitmask de compatibilidade (`$Compatibility`) do `.cfg`. Ausente →
+    /// [`CompatFlags::default`] (nenhum modo).
+    fn load_compat(&self, game_id: &GameId) -> Result<CompatFlags, GameInfoError>;
+    /// Grava o bitmask preservando info e as demais chaves do `.cfg` (read-
+    /// modify-write). Bitmask zerado remove a chave `$Compatibility`.
+    fn save_compat(&self, game_id: &GameId, flags: &CompatFlags) -> Result<(), GameInfoError>;
 }
 
 /// Falha de leitura/escrita do info. Erro de info nunca deve derrubar o app — a
