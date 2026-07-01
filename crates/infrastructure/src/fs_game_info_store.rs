@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use oplhost_core::{GameCfg, GameId, GameInfo, GameInfoError, GameInfoStore, cfg_file_name};
+use oplhost_core::{
+    CompatFlags, GameCfg, GameId, GameInfo, GameInfoError, GameInfoStore, cfg_file_name,
+};
 
 /// Nome da subpasta do OPL que guarda os `.cfg` por jogo.
 pub const CFG_DIR_NAME: &str = "CFG";
@@ -41,6 +43,14 @@ impl FsGameInfoStore {
             Err(e) => Err(GameInfoError::Io(e.to_string())),
         }
     }
+
+    /// Grava o `.cfg` (criando `CFG/` se preciso). Centraliza o write usado pelo
+    /// save de info e de compatibilidade.
+    fn write_cfg(&self, game_id: &GameId, cfg: &GameCfg) -> Result<(), GameInfoError> {
+        std::fs::create_dir_all(&self.cfg_dir).map_err(|e| GameInfoError::Io(e.to_string()))?;
+        std::fs::write(self.cfg_path(game_id), cfg.to_string())
+            .map_err(|e| GameInfoError::Io(e.to_string()))
+    }
 }
 
 impl GameInfoStore for FsGameInfoStore {
@@ -60,9 +70,18 @@ impl GameInfoStore for FsGameInfoStore {
         let mut cfg = GameCfg::parse(&self.read_cfg_raw(game_id)?);
         cfg.apply_info(info);
 
-        std::fs::create_dir_all(&self.cfg_dir).map_err(|e| GameInfoError::Io(e.to_string()))?;
-        std::fs::write(self.cfg_path(game_id), cfg.to_string())
-            .map_err(|e| GameInfoError::Io(e.to_string()))
+        self.write_cfg(game_id, &cfg)
+    }
+
+    fn load_compat(&self, game_id: &GameId) -> Result<CompatFlags, GameInfoError> {
+        Ok(GameCfg::parse(&self.read_cfg_raw(game_id)?).compat())
+    }
+
+    fn save_compat(&self, game_id: &GameId, flags: &CompatFlags) -> Result<(), GameInfoError> {
+        // Read-modify-write: preserva info e demais chaves; mexe só no bitmask.
+        let mut cfg = GameCfg::parse(&self.read_cfg_raw(game_id)?);
+        cfg.apply_compat(flags);
+        self.write_cfg(game_id, &cfg)
     }
 }
 
@@ -135,6 +154,72 @@ mod tests {
         assert!(raw.contains("Genre=RPG"));
         assert!(raw.contains("Developer=Capcom"));
         assert!(!raw.contains("Genre=Antigo"));
+    }
+
+    #[test]
+    fn load_compat_de_cfg_inexistente_e_vazio() {
+        let dir = temp_dir();
+        let store = FsGameInfoStore::new(&dir);
+        assert!(store.load_compat(&an_id()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn save_compat_grava_o_bitmask_e_round_trip() {
+        let dir = temp_dir();
+        let store = FsGameInfoStore::new(&dir);
+        let mut flags = oplhost_core::CompatFlags::default();
+        flags.set(oplhost_core::CompatMode::AccurateReads, true);
+        flags.set(oplhost_core::CompatMode::DisableIgr, true);
+        store.save_compat(&an_id(), &flags).unwrap();
+
+        let loaded = store.load_compat(&an_id()).unwrap();
+        assert!(loaded.is_set(oplhost_core::CompatMode::AccurateReads));
+        assert!(loaded.is_set(oplhost_core::CompatMode::DisableIgr));
+        // 0x01 | 0x20 = 33.
+        let raw = std::fs::read_to_string(dir.join("CFG/SLUS_200.02.cfg")).unwrap();
+        assert!(raw.contains("$Compatibility=33"));
+    }
+
+    /// TRAVA de integração: salvar compat não pode apagar info nem outras `$`.
+    #[test]
+    fn save_compat_preserva_info_e_vmc_no_disco() {
+        let dir = temp_dir();
+        let store = FsGameInfoStore::new(&dir);
+        std::fs::create_dir_all(dir.join("CFG")).unwrap();
+        std::fs::write(
+            dir.join("CFG/SLUS_200.02.cfg"),
+            "Title=God of War\n$VMC_0=Save\n",
+        )
+        .unwrap();
+
+        let mut flags = oplhost_core::CompatFlags::default();
+        flags.set(oplhost_core::CompatMode::SkipVideos, true);
+        store.save_compat(&an_id(), &flags).unwrap();
+
+        let raw = std::fs::read_to_string(dir.join("CFG/SLUS_200.02.cfg")).unwrap();
+        assert!(raw.contains("Title=God of War"));
+        assert!(raw.contains("$VMC_0=Save"));
+        assert!(raw.contains("$Compatibility=8"));
+    }
+
+    #[test]
+    fn save_compat_zerado_remove_a_chave_preservando_info() {
+        let dir = temp_dir();
+        let store = FsGameInfoStore::new(&dir);
+        std::fs::create_dir_all(dir.join("CFG")).unwrap();
+        std::fs::write(
+            dir.join("CFG/SLUS_200.02.cfg"),
+            "$Compatibility=4\nGenre=Action\n",
+        )
+        .unwrap();
+
+        store
+            .save_compat(&an_id(), &oplhost_core::CompatFlags::default())
+            .unwrap();
+
+        let raw = std::fs::read_to_string(dir.join("CFG/SLUS_200.02.cfg")).unwrap();
+        assert!(!raw.contains("$Compatibility"));
+        assert!(raw.contains("Genre=Action"));
     }
 
     #[test]

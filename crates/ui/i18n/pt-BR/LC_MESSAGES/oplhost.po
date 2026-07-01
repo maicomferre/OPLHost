@@ -124,3 +124,27 @@ msgstr "← Cancelar"
 
 msgid "Save metadata"
 msgstr "Salvar metadados"
+
+msgid "Compatibility modes (OPL)"
+msgstr "Modos de compatibilidade (OPL)"
+
+msgid "Mode 1: Accurate Reads"
+msgstr "Modo 1: Leitura precisa"
+
+msgid "Mode 2: Synchronous Mode"
+msgstr "Modo 2: Modo síncrono"
+
+msgid "Mode 3: Unhook Syscalls"
+msgstr "Modo 3: Desfazer hooks de syscalls"
+
+msgid "Mode 4: Skip Videos"
+msgstr "Modo 4: Pular vídeos"
+
+msgid "Mode 5: Emulate DVD-DL"
+msgstr "Modo 5: Emular DVD dual-layer"
+
+msgid "Mode 6: Disable IGR"
+msgstr "Modo 6: Desabilitar IGR"
+
+msgid "Per-game OPL load fixes. Leave all unchecked unless a game needs one."
+msgstr "Ajustes de carregamento do OPL por jogo. Deixe tudo desmarcado a menos que um jogo precise."
