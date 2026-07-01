@@ -69,14 +69,11 @@ impl GameInfoStore for FsGameInfoStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_path;
 
     /// Diretório temporário único por chamada (testes rodam em paralelo).
     fn temp_dir() -> PathBuf {
-        use std::sync::atomic::{AtomicU32, Ordering};
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut d = std::env::temp_dir();
-        d.push(format!("oplhost-gameinfo-test-{}-{n}", std::process::id()));
+        let d = unique_path("gameinfo");
         std::fs::create_dir_all(&d).unwrap();
         d
     }

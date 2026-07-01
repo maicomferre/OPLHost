@@ -86,21 +86,31 @@ impl<E: PrivilegeEscalator> SmbBackend<E> {
             .map(|o| o.stdout.starts_with(b"active"))
             .unwrap_or(false)
     }
+}
 
-    /// A config do OPL está aplicada? Verdadeiro quando o `opl_share.conf`
-    /// isolado existe E a linha de `include` está no `smb.conf`. Base do
-    /// `status` (decisão 2026-06-27): reflete "o share do OPL está servindo?",
-    /// não o estado do daemon global. Leitura pura de arquivos — sem root: o
-    /// `smb.conf` é world-readable e o `opl_share.conf` é criado com 0644.
-    fn config_applied(&self) -> bool {
-        let conf_exists = std::path::Path::new(&self.paths.share_conf).is_file();
-        if !conf_exists {
-            return false;
-        }
-        let include = self.paths.include_line();
-        std::fs::read_to_string(&self.paths.smb_conf)
-            .map(|content| content.lines().any(|line| line.trim() == include))
-            .unwrap_or(false)
+/// A config do OPL está aplicada nos `paths` dados? Verdadeiro quando o
+/// `opl_share.conf` isolado existe E a linha de `include` está no `smb.conf`.
+/// Base do `status` (decisão 2026-06-27): reflete "o share do OPL está
+/// servindo?", não o estado do daemon global. Leitura pura de arquivos — sem
+/// root: o `smb.conf` é world-readable e o `opl_share.conf` é criado com 0644.
+fn config_applied(paths: &SmbPaths) -> bool {
+    if !std::path::Path::new(&paths.share_conf).is_file() {
+        return false;
+    }
+    let include = paths.include_line();
+    std::fs::read_to_string(&paths.smb_conf)
+        .map(|content| content.lines().any(|line| line.trim() == include))
+        .unwrap_or(false)
+}
+
+/// Status do share do OPL sem precisar de uma `ShareConfig`: depende só dos
+/// caminhos padrão do Samba (o `status` ignora os campos da config). Evita
+/// montar um `ShareConfig` fictício só para ler o estado na UI.
+pub fn opl_share_status() -> ServerStatus {
+    if config_applied(&SmbPaths::default()) {
+        ServerStatus::Running
+    } else {
+        ServerStatus::Stopped
     }
 }
 
@@ -117,11 +127,11 @@ impl<E: PrivilegeEscalator> StorageBackend for SmbBackend<E> {
     fn status(&self) -> Result<ServerStatus, BackendError> {
         // "Ativo" = a config do OPL está aplicada (share isolado + include),
         // não o estado do smbd global (decisão 2026-06-27).
-        if self.config_applied() {
-            Ok(ServerStatus::Running)
+        Ok(if config_applied(&self.paths) {
+            ServerStatus::Running
         } else {
-            Ok(ServerStatus::Stopped)
-        }
+            ServerStatus::Stopped
+        })
     }
 
     fn rollback(&self) -> Result<(), BackendError> {
@@ -133,6 +143,7 @@ impl<E: PrivilegeEscalator> StorageBackend for SmbBackend<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_path;
     use oplhost_core::ShareAuth;
     use std::cell::RefCell;
     use std::path::PathBuf;
@@ -227,14 +238,7 @@ mod tests {
     #[test]
     fn status_deriva_da_config_aplicada_nao_do_smbd() {
         // Paths temporários isolados: o status lê estes arquivos, não o daemon.
-        let dir = std::env::temp_dir().join(format!(
-            "oplhost-status-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let dir = unique_path("status");
         std::fs::create_dir_all(&dir).unwrap();
         let share_conf = dir.join("opl_share.conf");
         let smb_conf = dir.join("smb.conf");

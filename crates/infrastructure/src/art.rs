@@ -256,9 +256,9 @@ fn backoff(attempt: u32) -> std::time::Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_path;
     use std::cell::RefCell;
     use std::collections::HashMap;
-    use std::sync::atomic::{AtomicU32, Ordering};
 
     /// Mock de `HttpGet`: serve bytes para URLs registradas, 404 (None) para o
     /// resto, e conta chamadas para checar a ordem jpg→png.
@@ -288,10 +288,7 @@ mod tests {
     }
 
     fn temp_art_dir() -> std::path::PathBuf {
-        static N: AtomicU32 = AtomicU32::new(0);
-        let i = N.fetch_add(1, Ordering::Relaxed);
-        let mut p = std::env::temp_dir();
-        p.push(format!("oplhost-art-test-{}-{i}", std::process::id()));
+        let p = unique_path("art");
         std::fs::create_dir_all(&p).unwrap();
         p
     }

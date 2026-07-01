@@ -5,108 +5,28 @@
 //! traduz cliques em chamadas de domínio, devolvendo só texto para a tela. Isso
 //! mantém a camada de apresentação trocável (Slint → egui) sem tocar o `core`.
 //!
-//! As operações que chamam `pkexec` (apply/rollback) BLOQUEIam até o usuário
-//! responder ao prompt do Polkit. Por isso rodam numa worker thread: a thread do
-//! event loop nunca trava. O resultado volta para a UI via
-//! `Weak::upgrade_in_event_loop`, e a flag `busy` desabilita os botões enquanto
-//! a operação corre (evita reentrância/cliques duplos).
+//! A lógica vive em módulos especializados: `ui_update` (modelo de atualização
+//! de tela), `catalog_view` (montagem do catálogo), `dir_hint` (dica de pasta),
+//! `app_config` (glue de config/status), `jobs` (threading + trabalho
+//! bloqueante) e `handlers` (corpo dos callbacks). `main` só faz o wiring.
 
-use std::path::{Path, PathBuf};
-
-use oplhost_core::{
-    AppSettings, GameId, GameInfo, GameInfoStore, GameMeta, MediaKind, MetaStore, OplMeta,
-    SETTINGS_VERSION, ServerStatus, SettingsStore, ShareAuth, ShareConfig, StorageBackend,
-    create_opl_layout, derive_title, is_opl_subdir_name, summarize,
-};
-use oplhost_infra::{
-    ArtProvider, FsGameInfoStore, FsSettingsStore, JsonMetaStore, RealFs, SmbBackend, dialog, iso,
-    net, scan,
-};
-use slint::{Model, ModelRc, VecModel};
-
+mod app_config;
+mod catalog_view;
+mod dir_hint;
+mod handlers;
 mod i18n;
-use i18n::{t, t_args};
+mod jobs;
+mod ui_update;
+
+use app_config::{current_status, current_user, load_settings};
+use catalog_view::build_catalog;
+use dir_hint::apply_dir_hint;
+use i18n::t;
+use ui_update::UiUpdate;
+
+use oplhost_infra::net;
 
 slint::include_modules!();
-
-const SHARE_NAME: &str = "PS2SMB";
-const SMB_PORT: u16 = 445;
-
-/// Dados de uma linha do catálogo em Rust puro (Send), convertidos para o
-/// `GameRow` do Slint só no event loop. Mantém a worker thread livre de tipos
-/// de UI não-`Send`.
-struct RowData {
-    title: String,
-    game_id: String,
-    media: String,
-    size: String,
-    /// Nome do arquivo cru da ISO — exibido no editor de metadados (o `title`
-    /// pode ser derivado/sobrescrito).
-    file_name: String,
-}
-
-/// Atualizações de tela produzidas por uma operação na worker thread e aplicadas
-/// de volta no event loop. `None` mantém o valor atual da propriedade.
-#[derive(Default)]
-struct UiUpdate {
-    status: Option<String>,
-    /// Novo estado do servidor (config aplicada?) para o botão de toggle refletir.
-    active: Option<bool>,
-    /// Linha-resumo do catálogo (contagem/tamanho).
-    summary: Option<String>,
-    /// Linhas do catálogo rico (título/ID/mídia/tamanho).
-    rows: Option<Vec<RowData>>,
-    /// Novo caminho do diretório-alvo (preenchido pelo seletor de pasta).
-    dir: Option<String>,
-    /// Dica contextual sobre o diretório-alvo (texto, é_alerta).
-    hint: Option<(String, bool)>,
-    message: String,
-}
-
-impl UiUpdate {
-    /// Só uma mensagem (ex.: erro); não mexe em status/catálogo.
-    fn message(msg: String) -> Self {
-        Self {
-            message: msg,
-            ..Default::default()
-        }
-    }
-
-    /// Aplica o resultado na UI e libera os botões (`busy = false`).
-    fn apply_to(self, ui: &AppWindow) {
-        if let Some(s) = self.status {
-            ui.set_status_text(s.into());
-        }
-        if let Some(a) = self.active {
-            ui.set_server_active(a);
-        }
-        if let Some(summary) = self.summary {
-            ui.set_catalog_summary(summary.into());
-        }
-        if let Some(rows) = self.rows {
-            let model: Vec<GameRow> = rows
-                .into_iter()
-                .map(|r| GameRow {
-                    title: r.title.into(),
-                    game_id: r.game_id.into(),
-                    media: r.media.into(),
-                    size: r.size.into(),
-                    file_name: r.file_name.into(),
-                })
-                .collect();
-            ui.set_catalog_rows(ModelRc::new(VecModel::from(model)));
-        }
-        if let Some(d) = self.dir {
-            ui.set_dir_path(d.into());
-        }
-        if let Some((text, warning)) = self.hint {
-            ui.set_dir_hint(text.into());
-            ui.set_dir_hint_warning(warning);
-        }
-        ui.set_message_text(self.message.into());
-        ui.set_busy(false);
-    }
-}
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
@@ -160,21 +80,21 @@ fn main() -> Result<(), slint::PlatformError> {
     let weak = ui.as_weak();
     ui.on_toggle_server_clicked(move || {
         if let Some(ui) = weak.upgrade() {
-            handle_toggle_server(&ui);
+            handlers::handle_toggle_server(&ui);
         }
     });
 
     let weak = ui.as_weak();
     ui.on_choose_dir_clicked(move || {
         if let Some(ui) = weak.upgrade() {
-            handle_choose_dir(&ui);
+            handlers::handle_choose_dir(&ui);
         }
     });
 
     let weak = ui.as_weak();
     ui.on_download_art_clicked(move || {
         if let Some(ui) = weak.upgrade() {
-            handle_download_art(&ui);
+            handlers::handle_download_art(&ui);
         }
     });
 
@@ -190,7 +110,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let weak = ui.as_weak();
     ui.on_game_clicked(move |idx| {
         if let Some(ui) = weak.upgrade() {
-            handle_game_clicked(&ui, idx);
+            handlers::handle_game_clicked(&ui, idx);
         }
     });
 
@@ -198,525 +118,9 @@ fn main() -> Result<(), slint::PlatformError> {
     let weak = ui.as_weak();
     ui.on_save_game_info_clicked(move || {
         if let Some(ui) = weak.upgrade() {
-            handle_save_game_info(&ui);
+            handlers::handle_save_game_info(&ui);
         }
     });
 
     ui.run()
-}
-
-/// Recalcula e aplica a dica contextual a partir do caminho atual no campo.
-/// Leituras de `stat` são instantâneas — pode rodar na thread da UI.
-fn apply_dir_hint(ui: &AppWindow) {
-    let path = PathBuf::from(ui.get_dir_path().to_string());
-    let (text, warning) = dir_hint(&path);
-    ui.set_dir_hint(text.into());
-    ui.set_dir_hint_warning(warning);
-}
-
-/// Dica contextual sobre o diretório-alvo escolhido. Retorna `(texto, é_alerta)`.
-///
-/// Cobre três casos do feedback de uso real (§ teste Fase 2):
-/// 1. caminho vazio → instrução padrão;
-/// 2. o usuário apontou uma **subpasta** do OPL (CD/DVD/ART…) em vez da raiz →
-///    **alerta**, sugerindo a pasta-pai;
-/// 3. a pasta já tem estrutura (CD/ ou DVD/) → nada será recriado; senão, a
-///    estrutura será criada ali (só como fallback, não sempre).
-fn dir_hint(path: &Path) -> (String, bool) {
-    if path.as_os_str().is_empty() {
-        return (t("hint-empty"), false);
-    }
-
-    if let Some(name) = path.file_name().and_then(|n| n.to_str())
-        && is_opl_subdir_name(name)
-    {
-        let parent = path
-            .parent()
-            .map(|p| p.display().to_string())
-            .filter(|p| !p.is_empty())
-            .unwrap_or_else(|| t("hint-parent-fallback"));
-        return (
-            t_args(
-                "hint-subdir",
-                &[("name", name.to_string()), ("parent", parent)],
-            ),
-            true,
-        );
-    }
-
-    if path.join("CD").is_dir() || path.join("DVD").is_dir() {
-        (t("hint-detected"), false)
-    } else {
-        (t("hint-will-create"), false)
-    }
-}
-
-/// Usuário dono da pasta (vira `force user` no share). O app roda em user-space.
-fn current_user() -> String {
-    std::env::var("USER").unwrap_or_else(|_| "nobody".to_string())
-}
-
-/// Lê o estado de UI persistido (XDG). Sem store disponível (sem HOME) → default.
-fn load_settings() -> AppSettings {
-    FsSettingsStore::new().map(|s| s.load()).unwrap_or_default()
-}
-
-/// Persiste o estado **não-sensível** da UI (diretório-alvo + toggle de auth) no
-/// `config.json` (XDG), best-effort. A senha **nunca** entra aqui — vive no Samba
-/// do sistema. Falha de gravação é silenciosa (só loga): persistência é
-/// conveniência e não pode atrapalhar a operação principal.
-fn save_settings(last_target_dir: Option<PathBuf>, auth_required: bool) {
-    let Some(store) = FsSettingsStore::new() else {
-        return;
-    };
-    let settings = AppSettings {
-        version: SETTINGS_VERSION,
-        last_target_dir,
-        auth_required,
-        auth_username: Some(current_user()),
-    };
-    if let Err(e) = store.save(&settings) {
-        eprintln!("[oplhost] não foi possível salvar config.json: {e}");
-    }
-}
-
-fn share_config(target: &Path, auth: ShareAuth) -> ShareConfig {
-    ShareConfig {
-        target_dir: target.to_path_buf(),
-        share_name: SHARE_NAME.to_string(),
-        port: SMB_PORT,
-        owner_user: current_user(),
-        auth,
-    }
-}
-
-/// Modo de acesso a partir do estado da UI: autenticado (usuário = dono da
-/// pasta) quando o toggle está ligado, senão guest (padrão).
-fn auth_mode(enabled: bool) -> ShareAuth {
-    if enabled {
-        ShareAuth::User {
-            username: current_user(),
-        }
-    } else {
-        ShareAuth::Guest
-    }
-}
-
-/// Toggle único do servidor: desativa (rollback) quando a config está aplicada,
-/// ativa (apply) quando não está. O estado real vem de `server_active`, coerente
-/// com o status exibido — um só botão, sem os dois conflitantes de antes.
-fn handle_toggle_server(ui: &AppWindow) {
-    if ui.get_server_active() {
-        handle_deactivate(ui);
-    } else {
-        handle_activate(ui);
-    }
-}
-
-/// "Ativar servidor": valida a entrada na thread da UI, marca `busy` e dispara o
-/// trabalho bloqueante (Polkit) numa worker thread. Erros viram mensagem — nunca
-/// panic (§8).
-fn handle_activate(ui: &AppWindow) {
-    let target = PathBuf::from(ui.get_dir_path().to_string().trim());
-    if target.as_os_str().is_empty() {
-        ui.set_message_text(t("msg-choose-dir-before-activate").into());
-        return;
-    }
-
-    let auth_enabled = ui.get_auth_enabled();
-    let password = ui.get_auth_password().to_string();
-    if auth_enabled && password.trim().is_empty() {
-        ui.set_message_text(t("msg-set-password").into());
-        return;
-    }
-
-    spawn_job(ui, &t("progress-applying"), move || {
-        run_activate(&target, auth_enabled, password)
-    });
-}
-
-/// "Desativar e reverter": rollback completo (remove share + include + firewall)
-/// numa única janela Polkit, fora da thread da UI. Volta o sistema ao estado
-/// anterior (§0).
-fn handle_deactivate(ui: &AppWindow) {
-    let target = PathBuf::from(ui.get_dir_path().to_string());
-    let auth_enabled = ui.get_auth_enabled();
-
-    spawn_job(ui, &t("progress-reverting"), move || {
-        run_deactivate(&target, auth_enabled)
-    });
-}
-
-/// "Escolher pasta…": abre o seletor nativo (zenity/kdialog) numa worker thread
-/// para não travar o event loop, partindo do caminho já digitado. A seleção
-/// preenche o campo de diretório; cancelar não altera nada.
-fn handle_choose_dir(ui: &AppWindow) {
-    let current = ui.get_dir_path().to_string();
-    let start = match current.trim() {
-        "" => None,
-        s => Some(PathBuf::from(s)),
-    };
-    let auth_enabled = ui.get_auth_enabled();
-    spawn_job(ui, &t("progress-selecting-folder"), move || {
-        run_choose_dir(start, auth_enabled)
-    });
-}
-
-fn run_choose_dir(start: Option<PathBuf>, auth_enabled: bool) -> UiUpdate {
-    match dialog::pick_folder(start) {
-        Some(path) => {
-            // Lembra o novo diretório escolhido para a próxima sessão (sem senha).
-            save_settings(Some(path.clone()), auth_enabled);
-            let (rows, summary) = build_catalog(&path);
-            UiUpdate {
-                dir: Some(path.display().to_string()),
-                rows: Some(rows),
-                summary: Some(summary),
-                hint: Some(dir_hint(&path)),
-                ..Default::default()
-            }
-        }
-        None => UiUpdate::default(),
-    }
-}
-
-/// "Baixar capas": para cada ISO do alvo, lê o Game ID e baixa a capa (`COV`)
-/// das fontes externas para `ART/`, sem rebaixar o que já existe. Roda na worker
-/// thread (rede bloqueante) e nunca derruba o app (§8) — relata o que conseguiu.
-fn handle_download_art(ui: &AppWindow) {
-    let target = PathBuf::from(ui.get_dir_path().to_string().trim());
-    if target.as_os_str().is_empty() {
-        ui.set_message_text(t("msg-choose-dir-before-art").into());
-        return;
-    }
-    spawn_job(ui, &t("progress-downloading-art"), move || {
-        run_download_art(&target)
-    });
-}
-
-fn run_download_art(target: &Path) -> UiUpdate {
-    let art_dir = target.join("ART");
-    if let Err(e) = std::fs::create_dir_all(&art_dir) {
-        return UiUpdate::message(t_args(
-            "msg-cannot-create-dir",
-            &[
-                ("path", art_dir.display().to_string()),
-                ("error", e.to_string()),
-            ],
-        ));
-    }
-
-    let provider = ArtProvider::new();
-    let (mut downloaded, mut skipped, mut not_found, mut no_id, mut errors) = (0, 0, 0, 0, 0);
-    for sg in scan::scan_games_with_paths(target) {
-        let id = match iso::read_game_id(&sg.path).ok().flatten() {
-            Some(id) => id,
-            None => {
-                no_id += 1;
-                continue;
-            }
-        };
-        match provider.fetch_for_game(&id, &art_dir, false) {
-            Ok(out) => {
-                downloaded += out.downloaded.len();
-                skipped += out.skipped.len();
-                not_found += out.not_found.len();
-            }
-            Err(_) => errors += 1,
-        }
-    }
-
-    UiUpdate::message(t_args(
-        "msg-covers-result",
-        &[
-            ("downloaded", downloaded.to_string()),
-            ("skipped", skipped.to_string()),
-            ("notfound", not_found.to_string()),
-            ("noid", no_id.to_string()),
-            ("errors", errors.to_string()),
-        ],
-    ))
-}
-
-/// Clique numa linha do catálogo: abre o editor de metadados in-place do jogo.
-/// Lê o `CFG/<GameID>.cfg` atual (rápido, I/O local → na thread da UI) e
-/// pré-preenche os campos. Jogo sem Game ID abre só-leitura (sem `.cfg` p/ casar).
-fn handle_game_clicked(ui: &AppWindow, idx: i32) {
-    let rows = ui.get_catalog_rows();
-    let Some(row) = (idx >= 0).then(|| rows.row_data(idx as usize)).flatten() else {
-        return;
-    };
-    let target = PathBuf::from(ui.get_dir_path().to_string().trim());
-
-    ui.set_editor_index(idx);
-    ui.set_editor_file_name(row.file_name.clone());
-    ui.set_editor_media(row.media.clone());
-    ui.set_editor_note("".into());
-    set_editor_fields(ui, &GameInfo::default());
-    ui.set_editor_has_cover(false);
-
-    match GameId::parse(row.game_id.as_str()) {
-        Some(id) => {
-            ui.set_editor_game_id(id.as_str().into());
-            ui.set_editor_can_edit(true);
-            match FsGameInfoStore::new(&target).load(&id) {
-                Ok(info) => set_editor_fields(ui, &info),
-                Err(e) => ui.set_editor_note(
-                    t_args("msg-cannot-read-meta", &[("error", e.to_string())]).into(),
-                ),
-            }
-            load_cover(ui, &target, &id);
-        }
-        None => {
-            ui.set_editor_game_id("".into());
-            ui.set_editor_can_edit(false);
-        }
-    }
-
-    ui.set_show_game_editor(true);
-}
-
-/// Preenche os 5 campos do editor a partir de um `GameInfo` (campo ausente → "").
-fn set_editor_fields(ui: &AppWindow, info: &GameInfo) {
-    let s = |o: &Option<String>| o.clone().unwrap_or_default().into();
-    ui.set_field_title(s(&info.title));
-    ui.set_field_genre(s(&info.genre));
-    ui.set_field_release(s(&info.release));
-    ui.set_field_developer(s(&info.developer));
-    ui.set_field_description(s(&info.description));
-}
-
-/// Carrega a capa `ART/<id>_COV.{png,jpg}` no editor, se existir. Falha é
-/// silenciosa (capa some) — é só enriquecimento visual.
-fn load_cover(ui: &AppWindow, target: &Path, id: &GameId) {
-    let art = target.join("ART");
-    for ext in ["png", "jpg"] {
-        let path = art.join(format!("{}_COV.{ext}", id.as_str()));
-        if path.is_file()
-            && let Ok(img) = slint::Image::load_from_path(&path)
-        {
-            ui.set_editor_cover(img);
-            ui.set_editor_has_cover(true);
-            return;
-        }
-    }
-}
-
-/// Salvar do editor: monta o `GameInfo` (campo vazio → `None` = remover a chave),
-/// valida e grava por read-modify-write em `CFG/<GameID>.cfg` (preserva
-/// compatibilidade). I/O local rápido → na thread da UI. Erro vira aviso no
-/// editor, sem fechar. Sucesso fecha o editor e atualiza o título da linha.
-fn handle_save_game_info(ui: &AppWindow) {
-    let Some(id) = GameId::parse(ui.get_editor_game_id().as_str()) else {
-        ui.set_editor_note(t("msg-no-game-id").into());
-        return;
-    };
-
-    // Todos os 5 campos são texto livre — o OPL exibe Release verbatim (não
-    // parseia data), então não há formato a impor; só o limite de 255 caracteres
-    // (validado no `save`) vale para qualquer campo.
-    let info = GameInfo {
-        title: non_empty(ui.get_field_title().as_str()),
-        genre: non_empty(ui.get_field_genre().as_str()),
-        release: non_empty(ui.get_field_release().as_str()),
-        developer: non_empty(ui.get_field_developer().as_str()),
-        description: non_empty(ui.get_field_description().as_str()),
-    };
-
-    let target = PathBuf::from(ui.get_dir_path().to_string().trim());
-    match FsGameInfoStore::new(&target).save(&id, &info) {
-        Ok(()) => {
-            update_row_title(ui, &info);
-            ui.set_show_game_editor(false);
-            ui.set_message_text(
-                t_args("msg-meta-saved", &[("id", id.as_str().to_string())]).into(),
-            );
-        }
-        Err(e) => {
-            ui.set_editor_note(t_args("msg-cannot-save-meta", &[("error", e.to_string())]).into())
-        }
-    }
-}
-
-/// Atualiza o título exibido na linha editada: usa o `Title` sobrescrito, ou
-/// volta ao título derivado do arquivo quando o campo é esvaziado. Mantém a lista
-/// coerente com o que o OPL passará a mostrar, sem reler o disco.
-fn update_row_title(ui: &AppWindow, info: &GameInfo) {
-    let idx = ui.get_editor_index();
-    let rows = ui.get_catalog_rows();
-    let Some(mut row) = (idx >= 0).then(|| rows.row_data(idx as usize)).flatten() else {
-        return;
-    };
-    let title = info.title.clone().unwrap_or_else(|| {
-        let derived = derive_title(row.file_name.as_str());
-        if derived.is_empty() {
-            row.file_name.to_string()
-        } else {
-            derived
-        }
-    });
-    row.title = title.into();
-    rows.set_row_data(idx as usize, row);
-}
-
-/// `Some(texto_trim)` se não-vazio após `trim`; senão `None`. Usado para mapear
-/// campo de texto vazio em "remover a chave" no `.cfg`.
-fn non_empty(s: &str) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    }
-}
-
-/// Marca `busy`, exibe a mensagem de progresso e roda `job` numa worker thread,
-/// devolvendo o `UiUpdate` para o event loop quando terminar. Centraliza o padrão
-/// de threading para que `handle_activate`/`handle_deactivate` fiquem declarativos.
-fn spawn_job<F>(ui: &AppWindow, progress: &str, job: F)
-where
-    F: FnOnce() -> UiUpdate + Send + 'static,
-{
-    ui.set_busy(true);
-    ui.set_message_text(progress.into());
-
-    let weak = ui.as_weak();
-    std::thread::spawn(move || {
-        let update = job();
-        // Volta para a thread do event loop para mexer na UI com segurança.
-        let _ = weak.upgrade_in_event_loop(move |ui| update.apply_to(&ui));
-    });
-}
-
-/// Trabalho de "Ativar" (worker thread): cria a estrutura do OPL e aplica o
-/// share SMBv1. `create_opl_layout` é user-space; `apply_config` abre a janela
-/// Polkit. Retorna o que a UI deve mostrar.
-fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUpdate {
-    if let Err(e) = create_opl_layout(&RealFs, target) {
-        return UiUpdate::message(t_args(
-            "msg-cannot-create-layout",
-            &[
-                ("path", target.display().to_string()),
-                ("error", e.to_string()),
-            ],
-        ));
-    }
-
-    let cfg = share_config(target, auth_mode(auth_enabled));
-    let pw = if auth_enabled { Some(password) } else { None };
-    let backend = SmbBackend::new(cfg.clone()).with_auth_password(pw);
-    match backend.apply_config(&cfg) {
-        Ok(()) => {
-            // Config aplicada com sucesso: persiste diretório + toggle (sem senha).
-            save_settings(Some(target.to_path_buf()), auth_enabled);
-            let (status, active) = current_status();
-            let (rows, summary) = build_catalog(target);
-            UiUpdate {
-                status: Some(status),
-                active: Some(active),
-                rows: Some(rows),
-                summary: Some(summary),
-                ..Default::default()
-            }
-        }
-        Err(e) => UiUpdate::message(t_args("msg-cannot-activate", &[("error", e.to_string())])),
-    }
-}
-
-/// Trabalho de "Desativar" (worker thread): rollback completo via Polkit.
-fn run_deactivate(target: &Path, auth_enabled: bool) -> UiUpdate {
-    let backend = SmbBackend::new(share_config(target, auth_mode(auth_enabled)));
-    match backend.rollback() {
-        Ok(()) => {
-            let (status, active) = current_status();
-            UiUpdate {
-                status: Some(status),
-                active: Some(active),
-                message: t("msg-reverted"),
-                ..Default::default()
-            }
-        }
-        Err(e) => UiUpdate::message(t_args("msg-cannot-revert", &[("error", e.to_string())])),
-    }
-}
-
-/// Estado atual do servidor para a UI: `(texto, ativo)`. "Ativo" = a config do
-/// OPL está aplicada (share isolado + include), derivado do backend — não do
-/// daemon global (decisão 2026-06-27). Sem root (leitura de arquivos).
-fn current_status() -> (String, bool) {
-    let backend = SmbBackend::new(share_config(Path::new("/"), ShareAuth::Guest));
-    let active = matches!(backend.status(), Ok(ServerStatus::Running));
-    let text = if active {
-        t("status-active")
-    } else {
-        t("status-inactive")
-    };
-    (text, active)
-}
-
-/// Lê as ISOs do alvo, extrai o Game ID de cada uma, atualiza o cache
-/// `opl_meta.json` e devolve as linhas do catálogo rico + a linha-resumo. Falha
-/// de cache é silenciosa: o catálogo vem do disco, não do JSON (§6).
-fn build_catalog(target: &Path) -> (Vec<RowData>, String) {
-    let scanned = scan::scan_games_with_paths(target);
-
-    let mut metas = Vec::with_capacity(scanned.len());
-    for sg in &scanned {
-        // Ler o Game ID nunca derruba a listagem: ISO ilegível vira "—".
-        let id = iso::read_game_id(&sg.path).ok().flatten();
-        metas.push(GameMeta::from_entry(&sg.entry, id));
-    }
-
-    let entries: Vec<_> = scanned.into_iter().map(|s| s.entry).collect();
-    let summary = summarize(&entries);
-
-    let store = JsonMetaStore::new(target);
-    let _ = store.save(&OplMeta::from_games(metas.clone())); // best-effort
-
-    let rows = metas.iter().map(row_from_meta).collect();
-    let summary_text = t_args(
-        "catalog-summary",
-        &[
-            ("total", summary.total_count().to_string()),
-            ("cd", summary.cd_count.to_string()),
-            ("dvd", summary.dvd_count.to_string()),
-            ("size", format_size(summary.total_bytes)),
-        ],
-    );
-    (rows, summary_text)
-}
-
-/// Converte um `GameMeta` numa linha pronta para exibição.
-fn row_from_meta(m: &GameMeta) -> RowData {
-    RowData {
-        title: if m.title.is_empty() {
-            m.file_name.clone()
-        } else {
-            m.title.clone()
-        },
-        game_id: m
-            .game_id
-            .as_ref()
-            .map(|g| g.as_str().to_string())
-            .unwrap_or_else(|| "—".to_string()),
-        media: match m.media {
-            MediaKind::Cd => "CD",
-            MediaKind::Dvd => "DVD",
-        }
-        .to_string(),
-        size: format_size(m.size_bytes),
-        file_name: m.file_name.clone(),
-    }
-}
-
-/// Formata um tamanho em bytes para exibição (MB abaixo de 1 GB, senão GB).
-fn format_size(bytes: u64) -> String {
-    const MB: f64 = 1024.0 * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    let b = bytes as f64;
-    if b >= GB {
-        format!("{:.1} GB", b / GB)
-    } else {
-        format!("{:.0} MB", b / MB)
-    }
 }

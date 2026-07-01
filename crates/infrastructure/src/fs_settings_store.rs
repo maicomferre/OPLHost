@@ -83,17 +83,13 @@ impl SettingsStore for FsSettingsStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_path;
     use std::path::PathBuf;
 
     /// Arquivo temporário único POR CHAMADA — os testes rodam em paralelo e não
-    /// podem disputar o mesmo caminho. Combina PID + contador atômico.
+    /// podem disputar o mesmo caminho.
     fn temp_config_path() -> PathBuf {
-        use std::sync::atomic::{AtomicU32, Ordering};
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut d = std::env::temp_dir();
-        d.push(format!("oplhost-settings-test-{}-{n}", std::process::id()));
-        d.join(CONFIG_FILE_NAME)
+        unique_path("settings").join(CONFIG_FILE_NAME)
     }
 
     #[test]
