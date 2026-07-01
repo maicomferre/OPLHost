@@ -4,7 +4,7 @@
 > Este é o ponto em que a abstração `StorageBackend` é **revisitada com os dois
 > casos concretos na mão** (SMB + UDPBD), como manda o §7.1 — não antes.
 
-- **Status:** Em andamento (refatoração do trait + adapter sem hardware; live no PS2 pendente)
+- **Status:** Em andamento (core + adapter completos e testados; falta wiring da UI; live no PS2 pendente)
 - **Criado em:** 2026-07-01
 - **Última atualização:** 2026-07-01
 
@@ -120,32 +120,30 @@ a abstração, não um chute a priori.
 
 ## Tarefas
 
-### core — refatorar a abstração (sem hardware)
-- [ ] `StorageBackend`: `apply(&self)`, `status(&self)`, `rollback(&self)` (tirar
-      `ShareConfig` das assinaturas). Atualizar doc do trait explicando os dois
-      modelos e por que os 3 verbos servem aos dois.
-- [ ] `BackendKind { Smb, Udpbd }` no domínio; `AppSettings` ganha o campo
-      (com migração de versão do settings, default `Smb`).
-- [ ] Tipos de config por backend: manter `ShareConfig` (SMB) e criar
-      `UdpbdConfig { device: PathBuf, /* porta é fixa 48573 */ }` no domínio.
-- [ ] Testes: settings com `backend_kind` (default + round-trip); doc-tests do
-      trait se aplicável.
+### core — refatorar a abstração (sem hardware) — ✅ `94fde17`, `73209a2`
+- [x] `StorageBackend`: `apply(&self)`, `status(&self)`, `rollback(&self)` (tirar
+      `ShareConfig` das assinaturas). Doc do trait explica os dois modelos e por
+      que os 3 verbos servem aos dois.
+- [x] `BackendKind { Smb, Udpbd }` no domínio; `AppSettings` ganha o campo
+      (`#[serde(default)]` → migração sem bump de versão, default `Smb`).
+- [x] Tipos de config por backend: `ShareConfig` (SMB) mantido e
+      `UdpbdConfig { device }` criado (`UDPBD_PORT = 0xBDBD`).
+- [x] Testes: settings com `backend_kind` (default + round-trip + config antiga).
 
-### infra — `UdpbdBackend` (sem hardware)
-- [ ] `udpbd_script.rs` (puro): monta o corpo do `systemd-run`/rollback e a regra
-      de firewall UDP — como `smb_script.rs`. Testável por string.
-- [ ] `UdpbdBackend` impl `StorageBackend`: `apply` sobe a unit transiente +
+### infra — `UdpbdBackend` (sem hardware) — ✅ `73209a2`
+- [x] `udpbd_script.rs` (puro): monta `systemd-run`/rollback + firewall UDP,
+      com escopo `--user` (imagem) ou sistema (raw device). Testável por string.
+- [x] `UdpbdBackend` impl `StorageBackend`: `apply` sobe a unit transiente +
       firewall UDP; `rollback` para/remove a unit + fecha a porta; `status` lê
-      `systemctl is-active`. Genérico sobre `PrivilegeEscalator` (raw device) e
-      um "runner" de `systemd --user` (imagem) — mockáveis.
-- [ ] `firewall.rs`/script: parametrizar **(proto, porta)** (`445/tcp`,
-      `48573/udp`).
-- [ ] Detecção do binário `udpbd-server` no PATH → erro amigável se ausente (§8).
-- [ ] Testes (escalador/runner mock): `apply` gera unit + `ufw allow 48573/udp`
-      numa única janela quando root; caso `--user` não chama Polkit; `rollback`
-      remove a unit e a regra; `status` mapeia is-active→Running/Stopped.
+      `systemctl is-active` (tolerante). Genérico sobre `PrivilegeEscalator`
+      (raw device) e `UserShell` (`--user`, imagem) — mockáveis.
+- [x] `firewall.rs`/script: **já** parametrizado por **(proto, porta)** (reuso;
+      teste de UDP 48573 presente).
+- [x] `server_available()` (checa PATH/arquivo) → a UI avisa se ausente (§8).
+- [x] Testes (escalador/shell mock): raw device → via root + `ufw 48573/udp`;
+      imagem → `--user` sem Polkit nem firewall; `rollback` nos dois escopos.
 
-### ui — seleção de backend (sem hardware)
+### ui — seleção de backend (sem hardware) — ⏳ próximo
 - [ ] Seletor SMB | UDPBD (na tela de Settings — ver `settings-painel-config`),
       ligado a `BackendKind` persistido.
 - [ ] `make_backend(kind, ...)` em `app_config`/`jobs`; `run_activate`/
@@ -186,4 +184,6 @@ a abstração, não um chute a priori.
 ## Histórico
 | Data | Mudança | Commit |
 |------|---------|--------|
-| 2026-07-01 | Plano criado. UDPBD validado na fonte (`israpps/udpbd-server`: `udpbd-server <file>`, serve block device/imagem, UDP 48573 hardcoded, processo bloqueante). Definida a refatoração verbal do `StorageBackend` (SMB como 2º caso concreto) e a supervisão via `systemd-run` | _pendente commit_ |
+| 2026-07-01 | Plano criado. UDPBD validado na fonte (`israpps/udpbd-server`: `udpbd-server <file>`, serve block device/imagem, UDP 48573 hardcoded, processo bloqueante). Definida a refatoração verbal do `StorageBackend` (SMB como 2º caso concreto) e a supervisão via `systemd-run` | `10b6c2a` |
+| 2026-07-01 | `StorageBackend` vira contrato verbal `apply`/`status`/`rollback` (sem `ShareConfig`); SMB migrado sem mudança de comportamento | `94fde17` |
+| 2026-07-01 | `BackendKind`/`UdpbdConfig` no core + `UdpbdBackend` supervisionando o `udpbd-server` (escopo condicional raw device/imagem), tudo testado com mock (sem hardware) | `73209a2` |
