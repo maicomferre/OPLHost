@@ -115,12 +115,12 @@ pub fn opl_share_status() -> ServerStatus {
 }
 
 impl<E: PrivilegeEscalator> StorageBackend for SmbBackend<E> {
-    fn apply_config(&self, cfg: &ShareConfig) -> Result<(), BackendError> {
+    fn apply(&self) -> Result<(), BackendError> {
         // §8: se o smbd está parado mas a porta já tem dono, é outro serviço.
-        if !self.smbd_active() && net::tcp_port_listening(cfg.port) {
-            return Err(BackendError::PortInUse(cfg.port));
+        if !self.smbd_active() && net::tcp_port_listening(self.cfg.port) {
+            return Err(BackendError::PortInUse(self.cfg.port));
         }
-        let script = build_apply_script(&self.paths, cfg, self.auth_password.as_deref());
+        let script = build_apply_script(&self.paths, &self.cfg, self.auth_password.as_deref());
         self.escalator.run_root_script(&script)
     }
 
@@ -176,7 +176,7 @@ mod tests {
         let esc = RecordingEscalator::default();
         let backend = SmbBackend::with_parts(cfg(), SmbPaths::default(), esc);
 
-        backend.apply_config(&cfg()).unwrap();
+        backend.apply().unwrap();
 
         let scripts = backend.escalator.scripts.borrow();
         assert_eq!(scripts.len(), 1, "tudo numa única janela de privilégio");
@@ -198,7 +198,7 @@ mod tests {
         let backend = SmbBackend::with_parts(auth.clone(), SmbPaths::default(), esc)
             .with_auth_password(Some("s3nha".to_string()));
 
-        backend.apply_config(&auth).unwrap();
+        backend.apply().unwrap();
 
         let scripts = backend.escalator.scripts.borrow();
         assert_eq!(

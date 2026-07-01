@@ -50,7 +50,7 @@ pub fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUp
     let cfg = share_config(target, auth_mode(auth_enabled));
     let pw = if auth_enabled { Some(password) } else { None };
     let backend = SmbBackend::new(cfg.clone()).with_auth_password(pw);
-    match backend.apply_config(&cfg) {
+    match backend.apply() {
         Ok(()) => {
             // Config aplicada com sucesso: persiste diretório + toggle (sem senha).
             save_settings(Some(target.to_path_buf()), auth_enabled);
