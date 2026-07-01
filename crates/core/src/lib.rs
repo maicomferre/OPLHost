@@ -18,7 +18,9 @@ pub mod settings;
 
 pub use catalog::{CatalogSummary, GameEntry, Media, is_game_image_name, summarize};
 pub use compat::{CONFIG_ITEM_COMPAT, CompatFlags, CompatMode};
-pub use domain::{BackendError, ServerStatus, ShareAuth, ShareConfig};
+pub use domain::{
+    BackendError, BackendKind, ServerStatus, ShareAuth, ShareConfig, UDPBD_PORT, UdpbdConfig,
+};
 pub use game_id::{GameId, derive_title, parse_boot2_game_id};
 pub use game_info::{
     FieldError, FieldErrorKind, GameCfg, GameInfo, GameInfoError, GameInfoStore, OPL_VALUE_MAX_LEN,

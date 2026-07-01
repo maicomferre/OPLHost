@@ -31,11 +31,17 @@ pub fn save_settings(last_target_dir: Option<PathBuf>, auth_required: bool) {
     let Some(store) = FsSettingsStore::new() else {
         return;
     };
+    // Preserva o que não é passado nesta chamada (backend escolhido + device do
+    // UDPBD): estas rotas só mexem em diretório/auth do SMB, não podem zerar a
+    // seleção de backend feita nos Settings.
+    let prev = store.load();
     let settings = AppSettings {
         version: SETTINGS_VERSION,
         last_target_dir,
         auth_required,
         auth_username: Some(current_user()),
+        backend_kind: prev.backend_kind,
+        udpbd_device: prev.udpbd_device,
     };
     if let Err(e) = store.save(&settings) {
         eprintln!("[oplhost] não foi possível salvar config.json: {e}");
