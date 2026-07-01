@@ -24,6 +24,7 @@ use dir_hint::apply_dir_hint;
 use i18n::t;
 use ui_update::UiUpdate;
 
+use oplhost_core::BackendKind;
 use oplhost_infra::net;
 
 slint::include_modules!();
@@ -56,6 +57,12 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.set_dir_path(dir.display().to_string().into());
     }
     ui.set_auth_enabled(restored.auth_required);
+    // Restaura o backend escolhido + o device do UDPBD (o alvo do UDPBD é
+    // separado do diretório do SMB — modelos diferentes).
+    ui.set_backend_udpbd(matches!(restored.backend_kind, BackendKind::Udpbd));
+    if let Some(dev) = &restored.udpbd_device {
+        ui.set_udpbd_device(dev.display().to_string().into());
+    }
     apply_dir_hint(&ui);
 
     // Se havia um diretório válido salvo, recarrega o catálogo dele AGORA, antes
@@ -103,6 +110,22 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.on_dir_path_edited(move || {
         if let Some(ui) = weak.upgrade() {
             apply_dir_hint(&ui);
+        }
+    });
+
+    // Troca de backend (SMB↔UDPBD) nos Settings → persiste e reavalia o status.
+    let weak = ui.as_weak();
+    ui.on_backend_changed(move || {
+        if let Some(ui) = weak.upgrade() {
+            handlers::handle_backend_changed(&ui);
+        }
+    });
+
+    // Edição do device/imagem do UDPBD → persiste para a próxima sessão.
+    let weak = ui.as_weak();
+    ui.on_udpbd_device_edited(move || {
+        if let Some(ui) = weak.upgrade() {
+            handlers::handle_udpbd_device_edited(&ui);
         }
     });
 

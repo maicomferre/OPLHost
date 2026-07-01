@@ -4,7 +4,7 @@
 > Este é o ponto em que a abstração `StorageBackend` é **revisitada com os dois
 > casos concretos na mão** (SMB + UDPBD), como manda o §7.1 — não antes.
 
-- **Status:** Em andamento (core + adapter completos e testados; falta wiring da UI; live no PS2 pendente)
+- **Status:** Em andamento (core + adapter + UI completos e testados sem hardware; falta só o live no PS2)
 - **Criado em:** 2026-07-01
 - **Última atualização:** 2026-07-01
 
@@ -143,16 +143,21 @@ a abstração, não um chute a priori.
 - [x] Testes (escalador/shell mock): raw device → via root + `ufw 48573/udp`;
       imagem → `--user` sem Polkit nem firewall; `rollback` nos dois escopos.
 
-### ui — seleção de backend (sem hardware) — ⏳ próximo
-- [ ] Seletor SMB | UDPBD (na tela de Settings — ver `settings-painel-config`),
-      ligado a `BackendKind` persistido.
-- [ ] `make_backend(kind, ...)` em `app_config`/`jobs`; `run_activate`/
-      `run_deactivate`/`current_status` passam pela factory (fim do hardcode SMB
-      em `jobs.rs`).
-- [ ] Campo de **device/imagem** do UDPBD quando esse backend está escolhido
-      (separado do diretório-alvo do SMB, pois o modelo difere).
-- [ ] Strings via `@tr` (idioma-fonte en) + pt-BR; comunicar que UDPBD serve um
-      block device/imagem e abre UDP 48573 (transparência, §8/§0).
+### ui — seleção de backend (sem hardware) — ✅
+- [x] Seletor SMB | UDPBD nos Settings (CheckBox), ligado a `backend-udpbd`
+      persistido em `BackendKind`; "Share access" (auth) fica só no SMB.
+- [x] `run_activate_udpbd`/`run_deactivate_udpbd` em `jobs`; `handle_toggle_server`
+      ramifica por backend; `current_status` é backend-aware (lê o `config.json`)
+      — fim do hardcode SMB no fluxo de status/toggle.
+- [x] Campo de **device/imagem** do UDPBD (LineEdit próprio, separado do
+      diretório-alvo do SMB) exibido quando esse backend está escolhido;
+      persistido em `udpbd_device`.
+- [x] Strings via `@tr` (idioma-fonte en) + pt-BR (`.po`) + fluent
+      (`msg-choose-device`, `msg-udpbd-server-missing`): comunica que UDPBD serve
+      um block device/imagem cru e abre UDP 48573 (transparência, §8/§0).
+- Nota: catálogo (scan de `CD/DVD`) e "baixar capas" seguem sendo do fluxo SMB
+  (pasta). No UDPBD os arquivos vivem **dentro** do device/imagem → catálogo fica
+  vazio na V1 (fora de escopo; casa com a fábrica de imagem adiada).
 
 ## Critérios de aceitação
 
@@ -161,8 +166,8 @@ a abstração, não um chute a priori.
 - [ ] `UdpbdBackend` compila, implementa o trait e passa nos testes de script/
       supervisão com mocks (sem hardware).
 - [ ] Firewall parametrizado por proto+porta com teste cobrindo UDP 48573.
-- [ ] UI permite escolher o backend e o estado persiste entre sessões.
-- [ ] `cargo test --workspace`, `clippy` e `fmt` limpos.
+- [x] UI permite escolher o backend e o estado persiste entre sessões.
+- [x] `cargo test --workspace` (122), `clippy` e `fmt` limpos.
 - [ ] **Em campo (sessão de hardware):** OPL beta-2012 conecta e lê o catálogo via
       `udpbd-server` supervisionado pelo app (itens de "A validar no ambiente").
 
@@ -187,3 +192,4 @@ a abstração, não um chute a priori.
 | 2026-07-01 | Plano criado. UDPBD validado na fonte (`israpps/udpbd-server`: `udpbd-server <file>`, serve block device/imagem, UDP 48573 hardcoded, processo bloqueante). Definida a refatoração verbal do `StorageBackend` (SMB como 2º caso concreto) e a supervisão via `systemd-run` | `10b6c2a` |
 | 2026-07-01 | `StorageBackend` vira contrato verbal `apply`/`status`/`rollback` (sem `ShareConfig`); SMB migrado sem mudança de comportamento | `94fde17` |
 | 2026-07-01 | `BackendKind`/`UdpbdConfig` no core + `UdpbdBackend` supervisionando o `udpbd-server` (escopo condicional raw device/imagem), tudo testado com mock (sem hardware) | `73209a2` |
+| 2026-07-01 | UI: seletor SMB/UDPBD nos Settings, campo de device/imagem, toggle e status backend-aware, persistência da escolha, strings pt-BR/en. Fecha a parte sem hardware (só falta o live no PS2) | _pendente commit_ |

@@ -148,3 +148,24 @@ msgstr "Modo 6: Desabilitar IGR"
 
 msgid "Per-game OPL load fixes. Leave all unchecked unless a game needs one."
 msgstr "Ajustes de carregamento do OPL por jogo. Deixe tudo desmarcado a menos que um jogo precise."
+
+msgid "Storage backend"
+msgstr "Backend de armazenamento"
+
+msgid "Serve via UDPBD (BDM) instead of SMB (Samba)"
+msgstr "Servir via UDPBD (BDM) em vez de SMB (Samba)"
+
+msgid "SMB (default) serves a folder to any OPL out of the box. UDPBD is faster and lighter on the PS2, but serves a raw block device/image and needs an OPL build with BDM/UDPBD support."
+msgstr "O SMB (padrão) serve uma pasta para qualquer OPL de imediato. O UDPBD é mais rápido e leve no PS2, mas serve um block device/imagem cru e exige um OPL com suporte a BDM/UDPBD."
+
+msgid "UDPBD block device or image"
+msgstr "Block device ou imagem do UDPBD"
+
+msgid "/dev/sdX or /path/to/ps2.img"
+msgstr "/dev/sdX ou /caminho/para/ps2.img"
+
+msgid "UDPBD serves a raw FAT32/exFAT block device or image (not a folder), over UDP port 48573. A /dev/… path needs your password; an image file does not."
+msgstr "O UDPBD serve um block device/imagem FAT32/exFAT cru (não uma pasta), pela porta UDP 48573. Um caminho /dev/… pede sua senha; um arquivo-imagem não."
+
+msgid "UDPBD supervises the udpbd-server process serving your device over UDP 48573. It requires the udpbd-server binary installed and OPL built with BDM/UDPBD support."
+msgstr "O UDPBD supervisiona o processo udpbd-server servindo seu device pela UDP 48573. Exige o binário udpbd-server instalado e um OPL com suporte a BDM/UDPBD."
