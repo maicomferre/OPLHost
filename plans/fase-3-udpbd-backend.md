@@ -192,4 +192,4 @@ a abstração, não um chute a priori.
 | 2026-07-01 | Plano criado. UDPBD validado na fonte (`israpps/udpbd-server`: `udpbd-server <file>`, serve block device/imagem, UDP 48573 hardcoded, processo bloqueante). Definida a refatoração verbal do `StorageBackend` (SMB como 2º caso concreto) e a supervisão via `systemd-run` | `10b6c2a` |
 | 2026-07-01 | `StorageBackend` vira contrato verbal `apply`/`status`/`rollback` (sem `ShareConfig`); SMB migrado sem mudança de comportamento | `94fde17` |
 | 2026-07-01 | `BackendKind`/`UdpbdConfig` no core + `UdpbdBackend` supervisionando o `udpbd-server` (escopo condicional raw device/imagem), tudo testado com mock (sem hardware) | `73209a2` |
-| 2026-07-01 | UI: seletor SMB/UDPBD nos Settings, campo de device/imagem, toggle e status backend-aware, persistência da escolha, strings pt-BR/en. Fecha a parte sem hardware (só falta o live no PS2) | _pendente commit_ |
+| 2026-07-01 | UI: seletor SMB/UDPBD nos Settings, campo de device/imagem, toggle e status backend-aware, persistência da escolha, strings pt-BR/en. Fecha a parte sem hardware (só falta o live no PS2) | `bba4dbd` |
