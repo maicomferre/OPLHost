@@ -19,6 +19,8 @@ pub mod real_fs;
 pub mod scan;
 pub mod smb_backend;
 pub mod smb_script;
+pub mod udpbd_backend;
+pub mod udpbd_script;
 
 #[cfg(test)]
 mod test_util;
@@ -32,3 +34,4 @@ pub use privilege::{PkexecEscalator, PrivilegeEscalator};
 pub use real_fs::RealFs;
 pub use smb_backend::{SmbBackend, opl_share_status};
 pub use smb_script::{SmbPaths, build_apply_script, build_rollback_script, build_smb_conf};
+pub use udpbd_backend::{BashUserShell, DEFAULT_SERVER_BIN, UdpbdBackend, UserShell, needs_root};

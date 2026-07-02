@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use crate::domain::{BackendError, ServerStatus, ShareConfig};
+use crate::domain::{BackendError, ServerStatus};
 
 /// Port de filesystem. Existe para o `core` permanecer agnóstico a I/O: a
 /// lógica de estruturação de pastas depende deste Trait, não de `std::fs`, e
@@ -15,24 +15,30 @@ pub trait Fs {
 
 /// Port do servidor de storage do OPL. **Genérico, não casado com SMB.**
 ///
-/// Modelo "**aplicar/remover configuração**": o backend gerencia só a config
-/// que faz o catálogo do OPL ser servido (no SMB: o share isolado + include +
-/// firewall, com um *reload* do daemon), sem controlar o ciclo de vida de um
-/// daemon do sistema que pode atender a outros usos. Por isso o contrato é
-/// `apply_config` / `status` / `rollback` — não há `start`/`stop` de processo.
+/// Contrato **verbal** de 3 operações que servem aos dois modelos concretos
+/// (revisitado na fase UDPBD, `plans/fase-3-udpbd-backend.md`, com SMB como 2º
+/// caso concreto — CLAUDE.md §7.1):
 ///
-/// **Decisão (2026-06-27):** as operações antigas `start`/`stop` (que faziam
-/// `systemctl start/stop smbd` no daemon global) foram removidas — paravam o
-/// Samba do sistema inteiro, violando o isolamento (§0). Controle de ciclo de
-/// vida de um **processo dedicado** só fará sentido no futuro `UdpbdBackend`
-/// (§7.1), que supervisiona seu próprio servidor; a abstração será revisitada
-/// ali, com os dois casos concretos na mão (CLAUDE.md §7.1). Até lá, este Trait
-/// diverge da lista de §3 do CLAUDE.md de propósito — ver `plans/`.
+/// - **`apply`** — passa a servir o catálogo do OPL. No `SmbBackend` é
+///   declarativo: gera o share isolado + include + firewall e dá *reload* no
+///   `smbd` (nunca start/stop do daemon **global**, §0). No `UdpbdBackend` é
+///   supervisão: sobe o processo dedicado do servidor (via unit do systemd) +
+///   firewall UDP.
+/// - **`status`** — o catálogo está sendo servido? Derivado do que cada backend
+///   considera "servindo" (SMB: config aplicada; UDPBD: processo vivo) — nunca do
+///   estado de um daemon global.
+/// - **`rollback`** — deixa de servir e desfaz o que `apply` fez.
+///
+/// **Sem `ShareConfig` no contrato (decisão 2026-07-01):** cada backend carrega a
+/// **própria** config na construção (o SMB usa `ShareConfig`; o UDPBD, um
+/// `UdpbdConfig`). Assim o trait não conhece campos SMB-flavored (`share_name`,
+/// `auth`…). As antigas `start`/`stop` (que mexiam no `smbd` global) seguem fora:
+/// o processo do UDPBD é **dedicado** ao app, não um daemon compartilhado.
 pub trait StorageBackend {
-    /// Gera/aplica a configuração necessária para servir o diretório-alvo.
-    fn apply_config(&self, cfg: &ShareConfig) -> Result<(), BackendError>;
-    /// Estado atual: a configuração do OPL está aplicada (servindo) ou não.
+    /// Passa a servir o catálogo do OPL (aplica config e/ou sobe o servidor).
+    fn apply(&self) -> Result<(), BackendError>;
+    /// Estado atual: o catálogo do OPL está sendo servido ou não.
     fn status(&self) -> Result<ServerStatus, BackendError>;
-    /// Desfaz toda a configuração aplicada (rollback completo).
+    /// Deixa de servir e desfaz tudo que `apply` fez (rollback completo).
     fn rollback(&self) -> Result<(), BackendError>;
 }

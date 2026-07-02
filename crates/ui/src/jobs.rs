@@ -4,12 +4,14 @@
 
 use std::path::{Path, PathBuf};
 
-use oplhost_core::{StorageBackend, create_opl_layout};
-use oplhost_infra::{ArtProvider, RealFs, SmbBackend, dialog, iso, scan};
+use oplhost_core::{StorageBackend, UdpbdConfig, create_opl_layout};
+use oplhost_infra::{ArtProvider, RealFs, SmbBackend, UdpbdBackend, dialog, iso, scan};
 use slint::ComponentHandle;
 
 use crate::AppWindow;
-use crate::app_config::{auth_mode, current_status, save_settings, share_config};
+use crate::app_config::{
+    auth_mode, current_status, save_backend_selection, save_settings, share_config,
+};
 use crate::catalog_view::build_catalog;
 use crate::dir_hint::dir_hint;
 use crate::i18n::{t, t_args};
@@ -50,7 +52,7 @@ pub fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUp
     let cfg = share_config(target, auth_mode(auth_enabled));
     let pw = if auth_enabled { Some(password) } else { None };
     let backend = SmbBackend::new(cfg.clone()).with_auth_password(pw);
-    match backend.apply_config(&cfg) {
+    match backend.apply() {
         Ok(()) => {
             // Config aplicada com sucesso: persiste diretório + toggle (sem senha).
             save_settings(Some(target.to_path_buf()), auth_enabled);
@@ -65,6 +67,51 @@ pub fn run_activate(target: &Path, auth_enabled: bool, password: String) -> UiUp
             }
         }
         Err(e) => UiUpdate::message(t_args("msg-cannot-activate", &[("error", e.to_string())])),
+    }
+}
+
+/// Trabalho de "Ativar" no backend UDPBD (worker thread): sobe o `udpbd-server`
+/// servindo o device/imagem via unit do systemd (Polkit só no caso raw device).
+/// A estrutura do OPL vive **dentro** do device (não criamos layout aqui — a V1
+/// serve um device/imagem já existente; ver `plans/fase-3-udpbd-backend.md`).
+pub fn run_activate_udpbd(device: &Path) -> UiUpdate {
+    let backend = UdpbdBackend::new(UdpbdConfig {
+        device: device.to_path_buf(),
+    });
+    if !backend.server_available() {
+        return UiUpdate::message(t("msg-udpbd-server-missing"));
+    }
+    match backend.apply() {
+        Ok(()) => {
+            save_backend_selection(true, Some(device.to_path_buf()));
+            let (status, active) = current_status();
+            UiUpdate {
+                status: Some(status),
+                active: Some(active),
+                ..Default::default()
+            }
+        }
+        Err(e) => UiUpdate::message(t_args("msg-cannot-activate", &[("error", e.to_string())])),
+    }
+}
+
+/// Trabalho de "Desativar" no backend UDPBD (worker thread): para a unit do
+/// servidor e fecha a porta UDP.
+pub fn run_deactivate_udpbd(device: &Path) -> UiUpdate {
+    let backend = UdpbdBackend::new(UdpbdConfig {
+        device: device.to_path_buf(),
+    });
+    match backend.rollback() {
+        Ok(()) => {
+            let (status, active) = current_status();
+            UiUpdate {
+                status: Some(status),
+                active: Some(active),
+                message: t("msg-reverted"),
+                ..Default::default()
+            }
+        }
+        Err(e) => UiUpdate::message(t_args("msg-cannot-revert", &[("error", e.to_string())])),
     }
 }
 

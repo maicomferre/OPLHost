@@ -92,11 +92,20 @@ export component AppWindow inherits Window {
     in-out property <bool> auth-enabled: false;
     in-out property <string> auth-password: "";
     in property <string> auth-username: "";
+    // Backend de storage: false = SMB (Samba, padrão), true = UDPBD (BDM). O SMB
+    // serve a pasta em `dir-path`; o UDPBD serve o block device/imagem em
+    // `udpbd-device` (modelos diferentes — ver plans/fase-3-udpbd-backend.md).
+    in-out property <bool> backend-udpbd: false;
+    in-out property <string> udpbd-device: "";
 
     callback toggle-server-clicked();
     callback choose-dir-clicked();
     callback download-art-clicked();
     callback dir-path-edited();
+    // Troca de backend (persiste a escolha e reavalia o status).
+    callback backend-changed();
+    // Edição do caminho do device/imagem do UDPBD (persiste).
+    callback udpbd-device-edited();
     // Clique numa linha do catálogo (índice) → o binário carrega o info e abre o editor.
     callback game-clicked(int);
     // Salvar os metadados editados no CFG/<GameID>.cfg do jogo selecionado.
@@ -130,7 +139,9 @@ export component AppWindow inherits Window {
             vertical-stretch: 1;
             spacing: 10px;
 
-            GroupBox {
+            // SMB serve uma PASTA. UDPBD serve um BLOCK DEVICE/IMAGEM (modelos
+            // diferentes) → o alvo troca conforme o backend escolhido nos Settings.
+            if !root.backend-udpbd: GroupBox {
                 title: @tr("OPL target directory");
                 VerticalBox {
                     HorizontalBox {
@@ -152,6 +163,23 @@ export component AppWindow inherits Window {
                         font-size: 12px;
                         wrap: word-wrap;
                         color: root.dir-hint-warning ? #b58900 : #888;
+                    }
+                }
+            }
+            if root.backend-udpbd: GroupBox {
+                title: @tr("UDPBD block device or image");
+                VerticalBox {
+                    LineEdit {
+                        placeholder-text: @tr("/dev/sdX or /path/to/ps2.img");
+                        text <=> root.udpbd-device;
+                        enabled: !root.busy;
+                        edited => { root.udpbd-device-edited(); }
+                    }
+                    Text {
+                        text: @tr("UDPBD serves a raw FAT32/exFAT block device or image (not a folder), over UDP port 48573. A /dev/… path needs your password; an image file does not.");
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        color: #888;
                     }
                 }
             }
@@ -247,8 +275,13 @@ export component AppWindow inherits Window {
                 }
             }
 
-            Text {
+            if !root.backend-udpbd: Text {
                 text: @tr("Warning: OPL requires SMBv1 (a legacy protocol). The app re-enables it in an isolated share and opens port 445 — asking for your password once.");
+                wrap: word-wrap;
+                color: #b58900;
+            }
+            if root.backend-udpbd: Text {
+                text: @tr("UDPBD supervises the udpbd-server process serving your device over UDP 48573. It requires the udpbd-server binary installed and OPL built with BDM/UDPBD support.");
                 wrap: word-wrap;
                 color: #b58900;
             }
@@ -269,6 +302,26 @@ export component AppWindow inherits Window {
             spacing: 10px;
 
             GroupBox {
+                title: @tr("Storage backend");
+                VerticalBox {
+                    spacing: 6px;
+                    CheckBox {
+                        text: @tr("Serve via UDPBD (BDM) instead of SMB (Samba)");
+                        checked <=> root.backend-udpbd;
+                        enabled: !root.busy;
+                        toggled => { root.backend-changed(); }
+                    }
+                    Text {
+                        text: @tr("SMB (default) serves a folder to any OPL out of the box. UDPBD is faster and lighter on the PS2, but serves a raw block device/image and needs an OPL build with BDM/UDPBD support.");
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        color: #888;
+                    }
+                }
+            }
+
+            // Acesso usuário/senha só existe no SMB — o UDPBD não tem autenticação.
+            if !root.backend-udpbd: GroupBox {
                 title: @tr("Share access");
                 VerticalBox {
                     spacing: 6px;
@@ -305,7 +358,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            Text {
+            if !root.backend-udpbd: Text {
                 text: @tr("Access changes take effect the next time you activate the server (or reactivate to apply now).");
                 font-size: 12px;
                 wrap: word-wrap;

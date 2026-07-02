@@ -10,18 +10,60 @@ use oplhost_infra::FsGameInfoStore;
 use slint::Model;
 
 use crate::AppWindow;
+use crate::app_config::{current_status, save_backend_selection};
 use crate::i18n::{t, t_args};
-use crate::jobs::{run_activate, run_choose_dir, run_deactivate, run_download_art, spawn_job};
+use crate::jobs::{
+    run_activate, run_activate_udpbd, run_choose_dir, run_deactivate, run_deactivate_udpbd,
+    run_download_art, spawn_job,
+};
 
 /// Toggle único do servidor: desativa (rollback) quando a config está aplicada,
 /// ativa (apply) quando não está. O estado real vem de `server_active`, coerente
 /// com o status exibido — um só botão, sem os dois conflitantes de antes.
 pub fn handle_toggle_server(ui: &AppWindow) {
-    if ui.get_server_active() {
+    if ui.get_backend_udpbd() {
+        toggle_udpbd(ui);
+    } else if ui.get_server_active() {
         handle_deactivate(ui);
     } else {
         handle_activate(ui);
     }
+}
+
+/// Toggle do backend UDPBD: sobe/derruba a supervisão do `udpbd-server` para o
+/// device/imagem escolhido. Sem device, avisa e não faz nada.
+fn toggle_udpbd(ui: &AppWindow) {
+    let device = PathBuf::from(ui.get_udpbd_device().to_string().trim());
+    if device.as_os_str().is_empty() {
+        ui.set_message_text(t("msg-choose-device").into());
+        return;
+    }
+    if ui.get_server_active() {
+        spawn_job(ui, &t("progress-reverting"), move || {
+            run_deactivate_udpbd(&device)
+        });
+    } else {
+        spawn_job(ui, &t("progress-applying"), move || {
+            run_activate_udpbd(&device)
+        });
+    }
+}
+
+/// Troca de backend nos Settings: persiste a escolha e reavalia o status (o
+/// "ativo" depende do backend agora selecionado).
+pub fn handle_backend_changed(ui: &AppWindow) {
+    let device = non_empty(ui.get_udpbd_device().as_str()).map(PathBuf::from);
+    save_backend_selection(ui.get_backend_udpbd(), device);
+    let (status, active) = current_status();
+    ui.set_status_text(status.into());
+    ui.set_server_active(active);
+}
+
+/// Edição do caminho do device/imagem do UDPBD: persiste (best-effort) para a
+/// próxima sessão lembrar o alvo.
+pub fn handle_udpbd_device_edited(ui: &AppWindow) {
+    let device = non_empty(ui.get_udpbd_device().as_str()).map(PathBuf::from);
+    save_backend_selection(ui.get_backend_udpbd(), device);
 }
 
 /// "Ativar servidor": valida a entrada na thread da UI, marca `busy` e dispara o

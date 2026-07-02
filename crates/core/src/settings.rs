@@ -16,6 +16,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::BackendKind;
+
 /// Versão do schema do `config.json`. Permite migração futura sem quebrar
 /// arquivos antigos — campos novos entram com `#[serde(default)]`.
 pub const SETTINGS_VERSION: u32 = 1;
@@ -34,6 +36,14 @@ pub struct AppSettings {
     /// deriva da conta do sistema de qualquer forma. **Nunca** acompanha senha.
     #[serde(default)]
     pub auth_username: Option<String>,
+    /// Backend escolhido (SMB padrão). `#[serde(default)]`: configs antigas sem
+    /// o campo carregam como `Smb`, mantendo a migração sem bump de versão.
+    #[serde(default)]
+    pub backend_kind: BackendKind,
+    /// Último block device/imagem escolhido para o UDPBD. Separado do
+    /// `last_target_dir` (pasta do SMB) porque o modelo do alvo difere.
+    #[serde(default)]
+    pub udpbd_device: Option<PathBuf>,
 }
 
 impl Default for AppSettings {
@@ -43,6 +53,8 @@ impl Default for AppSettings {
             last_target_dir: None,
             auth_required: false,
             auth_username: None,
+            backend_kind: BackendKind::Smb,
+            udpbd_device: None,
         }
     }
 }
@@ -90,6 +102,8 @@ mod tests {
         assert_eq!(s.last_target_dir, None);
         assert!(!s.auth_required);
         assert_eq!(s.auth_username, None);
+        assert_eq!(s.backend_kind, BackendKind::Smb);
+        assert_eq!(s.udpbd_device, None);
     }
 
     #[test]
@@ -99,21 +113,28 @@ mod tests {
             last_target_dir: Some(PathBuf::from("/mnt/ps2")),
             auth_required: true,
             auth_username: Some("maicom".to_string()),
+            backend_kind: BackendKind::Udpbd,
+            udpbd_device: Some(PathBuf::from("/dev/sdb1")),
         };
         let json = serde_json::to_string(&s).unwrap();
         let voltou: AppSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, voltou);
+        // O backend é serializado em minúsculas legíveis no config.json.
+        assert!(json.contains("\"backend_kind\":\"udpbd\""));
     }
 
     #[test]
     fn config_sem_campos_novos_ainda_carrega() {
         // Um config.json mínimo (só version) deve carregar — campos ausentes
-        // caem no default via #[serde(default)], honrando o §6.
+        // caem no default via #[serde(default)], honrando o §6. Config anterior
+        // ao UDPBD carrega como backend SMB (migração sem bump de versão).
         let json = r#"{"version":1}"#;
         let s: AppSettings = serde_json::from_str(json).unwrap();
         assert_eq!(s.last_target_dir, None);
         assert!(!s.auth_required);
         assert_eq!(s.auth_username, None);
+        assert_eq!(s.backend_kind, BackendKind::Smb);
+        assert_eq!(s.udpbd_device, None);
     }
 
     /// Garantia de segurança: o JSON serializado NUNCA contém um campo de senha.

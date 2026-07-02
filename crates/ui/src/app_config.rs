@@ -4,9 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use oplhost_core::{
-    AppSettings, SETTINGS_VERSION, ServerStatus, SettingsStore, ShareAuth, ShareConfig,
+    AppSettings, BackendKind, SETTINGS_VERSION, ServerStatus, SettingsStore, ShareAuth,
+    ShareConfig, StorageBackend, UdpbdConfig,
 };
-use oplhost_infra::{FsSettingsStore, opl_share_status};
+use oplhost_infra::{FsSettingsStore, UdpbdBackend, opl_share_status};
 
 use crate::i18n::t;
 
@@ -31,11 +32,17 @@ pub fn save_settings(last_target_dir: Option<PathBuf>, auth_required: bool) {
     let Some(store) = FsSettingsStore::new() else {
         return;
     };
+    // Preserva o que não é passado nesta chamada (backend escolhido + device do
+    // UDPBD): estas rotas só mexem em diretório/auth do SMB, não podem zerar a
+    // seleção de backend feita nos Settings.
+    let prev = store.load();
     let settings = AppSettings {
         version: SETTINGS_VERSION,
         last_target_dir,
         auth_required,
         auth_username: Some(current_user()),
+        backend_kind: prev.backend_kind,
+        udpbd_device: prev.udpbd_device,
     };
     if let Err(e) = store.save(&settings) {
         eprintln!("[oplhost] não foi possível salvar config.json: {e}");
@@ -64,16 +71,54 @@ pub fn auth_mode(enabled: bool) -> ShareAuth {
     }
 }
 
-/// Estado atual do servidor para a UI: `(texto, ativo)`. "Ativo" = a config do
-/// OPL está aplicada (share isolado + include), derivado dos caminhos padrão do
-/// Samba — não do daemon global (decisão 2026-06-27). Sem root (leitura de
-/// arquivos) e sem precisar montar uma `ShareConfig`.
+/// Persiste a escolha de backend + o device do UDPBD, preservando os demais
+/// campos (diretório/auth do SMB). Best-effort, como `save_settings`.
+pub fn save_backend_selection(backend_udpbd: bool, udpbd_device: Option<PathBuf>) {
+    let Some(store) = FsSettingsStore::new() else {
+        return;
+    };
+    let prev = store.load();
+    let settings = AppSettings {
+        version: SETTINGS_VERSION,
+        last_target_dir: prev.last_target_dir,
+        auth_required: prev.auth_required,
+        auth_username: prev.auth_username.or_else(|| Some(current_user())),
+        backend_kind: if backend_udpbd {
+            BackendKind::Udpbd
+        } else {
+            BackendKind::Smb
+        },
+        udpbd_device,
+    };
+    if let Err(e) = store.save(&settings) {
+        eprintln!("[oplhost] não foi possível salvar config.json: {e}");
+    }
+}
+
+/// Estado atual do servidor para a UI: `(texto, ativo)`. Backend-aware: no SMB,
+/// "ativo" = a config do OPL está aplicada (share isolado + include), lida dos
+/// caminhos padrão do Samba sem root; no UDPBD, = a unit do `udpbd-server` está
+/// ativa (`systemctl is-active`). Lê o backend escolhido do `config.json`.
 pub fn current_status() -> (String, bool) {
-    let active = matches!(opl_share_status(), ServerStatus::Running);
+    let active = matches!(current_server_status(), ServerStatus::Running);
     let text = if active {
         t("status-active")
     } else {
         t("status-inactive")
     };
     (text, active)
+}
+
+/// Status bruto do backend persistido. UDPBD sem device escolhido → `Stopped`.
+fn current_server_status() -> ServerStatus {
+    let s = load_settings();
+    match s.backend_kind {
+        BackendKind::Smb => opl_share_status(),
+        BackendKind::Udpbd => match s.udpbd_device {
+            Some(device) => UdpbdBackend::new(UdpbdConfig { device })
+                .status()
+                .unwrap_or(ServerStatus::Stopped),
+            None => ServerStatus::Stopped,
+        },
+    }
 }

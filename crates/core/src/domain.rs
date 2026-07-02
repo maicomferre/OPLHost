@@ -2,6 +2,36 @@
 
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
+/// Qual backend serve o catálogo do OPL. Persistido em [`crate::AppSettings`]; a
+/// UI seleciona e a factory da `infrastructure` constrói o adapter correspondente
+/// (SMB hoje, UDPBD também — CLAUDE.md §7.1). `serde` com `rename_all` para o
+/// `config.json` ficar legível (`"smb"`/`"udpbd"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackendKind {
+    /// Samba (SMBv1/NT1): serve uma **pasta**. Padrão, out-of-the-box do OPL.
+    #[default]
+    Smb,
+    /// UDPBD (BDM): supervisiona um servidor que expõe um **block device/imagem**.
+    Udpbd,
+}
+
+/// Porta UDP do UDPBD: `0xBDBD` = 48573, **hardcoded** no `udpbd-server` (não é
+/// parametrizável por CLI — validado na fonte, ver `plans/fase-3-udpbd-backend.md`).
+pub const UDPBD_PORT: u16 = 0xBDBD;
+
+/// Configuração do `UdpbdBackend`. Diferente do SMB de propósito: o alvo é um
+/// **block device (`/dev/sdX`) ou arquivo-imagem** FAT32/exFAT servido cru — não
+/// uma pasta (o `udpbd-server` faz `open(O_RDWR)` + `ioctl` de block size). A
+/// porta é fixa ([`UDPBD_PORT`]); guardada implicitamente pelo backend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UdpbdConfig {
+    /// Block device ou arquivo-imagem que o servidor expõe ao PS2.
+    pub device: PathBuf,
+}
+
 /// Estado observável do servidor de storage (qualquer backend).
 ///
 /// O significado é "**o catálogo do OPL está sendo servido?**", derivado do que
